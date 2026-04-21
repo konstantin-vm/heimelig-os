@@ -1,18 +1,50 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { ROLE_ALLOWED_PATHS } from "@/lib/constants/roles";
+import { getSessionRole, landingPathFor } from "@/lib/supabase/session";
 
-const PUBLIC_PATHS = new Set(["/"]);
-const PUBLIC_PREFIXES = ["/auth/"];
+// Paths served without a session. "/" is handled separately (root redirect).
+const PUBLIC_AUTH_PREFIXES = ["/auth/"];
 
-function isPublicPath(pathname: string): boolean {
-  if (PUBLIC_PATHS.has(pathname)) return true;
-  return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+// Auth pages that an already-authenticated user must not land on.
+// /auth/confirm (OTP) and /auth/error must stay reachable for logged-in users.
+const AUTH_REDIRECT_AWAY_PREFIXES = [
+  "/auth/login",
+  "/auth/sign-up",
+  "/auth/sign-up-success",
+  "/auth/forgot-password",
+  "/auth/update-password",
+];
+
+function isPublicAuthPath(pathname: string): boolean {
+  return PUBLIC_AUTH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+function isAuthRedirectAwayPath(pathname: string): boolean {
+  return AUTH_REDIRECT_AWAY_PREFIXES.some((prefix) =>
+    pathname.startsWith(prefix),
+  );
+}
+
+function pathAllowedForRole(
+  pathname: string,
+  allowed: readonly string[],
+): boolean {
+  return allowed.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
+function redirectTo(request: NextRequest, target: string): NextResponse {
+  const url = request.nextUrl.clone();
+  const [targetPath, targetSearch = ""] = target.split("?");
+  url.pathname = targetPath ?? "/";
+  url.search = targetSearch ? `?${targetSearch}` : "";
+  return NextResponse.redirect(url);
 }
 
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
+  let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,9 +58,7 @@ export async function updateSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           );
-          supabaseResponse = NextResponse.next({
-            request,
-          });
+          supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options),
           );
@@ -42,11 +72,43 @@ export async function updateSession(request: NextRequest) {
   // randomly logged out.
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
+  const pathname = request.nextUrl.pathname;
 
-  if (!user && !isPublicPath(request.nextUrl.pathname)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/auth/login";
-    return NextResponse.redirect(url);
+  // 1. Unauthenticated visitor — /auth/* is open, everything else goes to login.
+  if (!user) {
+    if (isPublicAuthPath(pathname)) return supabaseResponse;
+    return redirectTo(request, "/auth/login");
+  }
+
+  // 2. Already authenticated and standing on login/signup/reset — bounce home.
+  if (isAuthRedirectAwayPath(pathname)) {
+    return redirectTo(request, landingPathFor(getSessionRole(user)));
+  }
+
+  // 3. Authenticated and on /auth/confirm or /auth/error — let them through.
+  if (isPublicAuthPath(pathname)) return supabaseResponse;
+
+  // 4. Root "/" — send authenticated users to their role landing.
+  if (pathname === "/") {
+    return redirectTo(request, landingPathFor(getSessionRole(user)));
+  }
+
+  // 5. Role-aware access check for protected routes.
+  const role = getSessionRole(user);
+  if (role === null) {
+    // Authenticated session but no app_role set — stuck until admin fixes it.
+    // console.warn is intentional until Story 1.5 wires error_log.
+    console.warn(
+      `[proxy] authenticated user ${user.sub ?? "?"} has no app_role; redirecting from ${pathname}`,
+    );
+    return redirectTo(request, "/auth/error?error=no_role_assigned");
+  }
+
+  if (!pathAllowedForRole(pathname, ROLE_ALLOWED_PATHS[role])) {
+    console.warn(
+      `[proxy] role=${role} denied on ${pathname}; redirecting to ${landingPathFor(role)}`,
+    );
+    return redirectTo(request, landingPathFor(role));
   }
 
   // IMPORTANT: You *must* return the supabaseResponse object as it is.

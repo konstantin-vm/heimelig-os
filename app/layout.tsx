@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
-import { ThemeProvider } from "next-themes";
 import { QueryProvider } from "@/components/providers/query-provider";
 import "./globals.css";
 
@@ -27,16 +26,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="de-CH" suppressHydrationWarning>
+    <html lang="de-CH">
       <body className={`${geistSans.className} antialiased`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <QueryProvider>{children}</QueryProvider>
-        </ThemeProvider>
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   );

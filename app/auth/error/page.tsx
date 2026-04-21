@@ -5,6 +5,8 @@ const knownErrors = {
   invalid_link: "Der Bestätigungslink ist ungültig oder abgelaufen.",
   verify_failed: "Die Bestätigung ist fehlgeschlagen. Bitte versuche es erneut.",
   session_expired: "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.",
+  no_role_assigned:
+    "Dir wurde keine Rolle zugewiesen. Bitte kontaktiere einen Administrator.",
 } as const;
 
 type KnownErrorKey = keyof typeof knownErrors;

@@ -2,6 +2,8 @@
 
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { getSessionRole, landingPathFor } from "@/lib/supabase/session";
+import { loginSchema, type LoginInput } from "@/lib/validations/auth";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,97 +14,127 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import Link from "next/link";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useForm } from "react-hook-form";
+
+function germanAuthError(err: unknown): string {
+  const message =
+    err instanceof Error
+      ? err.message
+      : typeof err === "string"
+        ? err
+        : "";
+  if (/invalid login credentials/i.test(message)) {
+    return "E-Mail oder Passwort falsch.";
+  }
+  if (/email not confirmed/i.test(message)) {
+    return "E-Mail-Adresse ist noch nicht bestätigt. Bitte kontaktiere einen Administrator.";
+  }
+  if (/too many requests|rate limit/i.test(message)) {
+    return "Zu viele Anmeldeversuche. Bitte warte kurz und versuche es erneut.";
+  }
+  return "Anmeldung fehlgeschlagen. Bitte versuche es erneut.";
+}
 
 export function LoginForm({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<"div">) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting, isValid },
+  } = useForm<LoginInput>({
+    resolver: zodResolver(loginSchema),
+    mode: "onChange",
+    defaultValues: { email: "", password: "" },
+  });
+
+  const onSubmit = async (values: LoginInput) => {
+    setSubmitError(null);
     const supabase = createClient();
-    setIsLoading(true);
-    setError(null);
 
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) throw error;
-      // Update this route to redirect to an authenticated route. The user already has an active session.
-      router.push("/protected");
-      router.refresh();
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred");
-    } finally {
-      setIsLoading(false);
+    const { error } = await supabase.auth.signInWithPassword(values);
+    if (error) {
+      setSubmitError(germanAuthError(error));
+      return;
     }
+
+    const { data: claimsData } = await supabase.auth.getClaims();
+    const role = getSessionRole(claimsData?.claims);
+
+    if (role === null) {
+      await supabase.auth.signOut();
+      router.replace("/auth/error?error=no_role_assigned");
+      router.refresh();
+      return;
+    }
+
+    router.replace(landingPathFor(role));
+    router.refresh();
   };
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">Login</CardTitle>
+          <CardTitle className="text-2xl">Anmeldung</CardTitle>
           <CardDescription>
-            Enter your email below to login to your account
+            Melde dich mit deiner E-Mail-Adresse an.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleLogin}>
+          <form onSubmit={handleSubmit(onSubmit)} noValidate>
             <div className="flex flex-col gap-6">
               <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">E-Mail</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="m@example.com"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  aria-invalid={Boolean(errors.email) || undefined}
+                  {...register("email")}
                 />
+                {errors.email?.message && (
+                  <p className="text-sm text-red-500">{errors.email.message}</p>
+                )}
               </div>
               <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="password">Password</Label>
-                  <Link
-                    href="/auth/forgot-password"
-                    className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
-                  >
-                    Forgot your password?
-                  </Link>
-                </div>
+                <Label htmlFor="password">Passwort</Label>
                 <Input
                   id="password"
                   type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  aria-invalid={Boolean(errors.password) || undefined}
+                  {...register("password")}
                 />
+                {errors.password?.message && (
+                  <p className="text-sm text-red-500">
+                    {errors.password.message}
+                  </p>
+                )}
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Logging in..." : "Login"}
+              {submitError && (
+                <p className="text-sm text-red-500" role="alert">
+                  {submitError}
+                </p>
+              )}
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isSubmitting || !isValid}
+              >
+                {isSubmitting ? "Anmelden…" : "Anmelden"}
               </Button>
             </div>
-            <div className="mt-4 text-center text-sm">
-              Don&apos;t have an account?{" "}
-              <Link
-                href="/auth/sign-up"
-                className="underline underline-offset-4"
-              >
-                Sign up
-              </Link>
-            </div>
+            <p className="mt-4 text-center text-xs text-muted-foreground">
+              Passwort zurücksetzen? Admin kontaktieren.
+            </p>
           </form>
         </CardContent>
       </Card>

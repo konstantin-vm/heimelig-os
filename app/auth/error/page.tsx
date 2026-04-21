@@ -1,32 +1,35 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Suspense } from "react";
 
+const knownErrors = {
+  invalid_link: "Der Bestätigungslink ist ungültig oder abgelaufen.",
+  verify_failed: "Die Bestätigung ist fehlgeschlagen. Bitte versuche es erneut.",
+  session_expired: "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.",
+} as const;
+
+type KnownErrorKey = keyof typeof knownErrors;
+
+function isKnownError(value: string | undefined): value is KnownErrorKey {
+  return !!value && value in knownErrors;
+}
+
 async function ErrorContent({
   searchParams,
 }: {
-  searchParams: Promise<{ error: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const params = await searchParams;
+  const message = isKnownError(params?.error)
+    ? knownErrors[params.error]
+    : "Es ist ein unbekannter Fehler aufgetreten.";
 
-  return (
-    <>
-      {params?.error ? (
-        <p className="text-sm text-muted-foreground">
-          Code error: {params.error}
-        </p>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          An unspecified error occurred.
-        </p>
-      )}
-    </>
-  );
+  return <p className="text-sm text-muted-foreground">{message}</p>;
 }
 
 export default function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ error: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   return (
     <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
@@ -35,7 +38,7 @@ export default function Page({
           <Card>
             <CardHeader>
               <CardTitle className="text-2xl">
-                Sorry, something went wrong.
+                Entschuldigung, etwas ist schiefgelaufen.
               </CardTitle>
             </CardHeader>
             <CardContent>

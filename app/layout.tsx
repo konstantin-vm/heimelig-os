@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
+import localFont from "next/font/local";
 import { QueryProvider } from "@/components/providers/query-provider";
 import "./globals.css";
 
@@ -31,10 +31,19 @@ export const viewport: Viewport = {
   themeColor: "#ffffff",
 };
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const zalandoSans = localFont({
+  src: [
+    {
+      path: "./fonts/ZalandoSans-Variable.ttf",
+      style: "normal",
+    },
+    {
+      path: "./fonts/ZalandoSans-Italic-Variable.ttf",
+      style: "italic",
+    },
+  ],
+  variable: "--font-zalando-sans",
   display: "swap",
-  subsets: ["latin"],
 });
 
 export default function RootLayout({
@@ -44,7 +53,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="de-CH">
-      <body className={`${geistSans.className} antialiased`}>
+      <body className={`${zalandoSans.variable} font-sans antialiased`}>
         <QueryProvider>{children}</QueryProvider>
       </body>
     </html>

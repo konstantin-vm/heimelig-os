@@ -8,6 +8,8 @@ import { navItemsFor } from "@/lib/constants/navigation";
 import type { AppRole } from "@/lib/constants/roles";
 import { cn } from "@/lib/utils";
 
+import { NAV_ICONS } from "./nav-icons";
+
 type BottomNavProps = {
   role: AppRole;
 };
@@ -33,7 +35,7 @@ export function BottomNav({ role }: BottomNavProps) {
       <ul className="mx-auto flex h-16 w-full max-w-xl items-stretch">
         {items.map((item) => {
           const active = isActive(pathname, item.href);
-          const Icon = item.icon;
+          const Icon = NAV_ICONS[item.iconKey];
           return (
             <li key={item.key} className="flex flex-1">
               <Link

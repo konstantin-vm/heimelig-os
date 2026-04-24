@@ -1,10 +1,10 @@
 import { PageShell } from "@/components/composed";
 
-export default function ArticlesPage() {
+export default function ErrorsPage() {
   return (
-    <PageShell title="Artikel">
+    <PageShell title="Fehler">
       <p className="text-sm text-muted-foreground">
-        Wird in Epic 3 umgesetzt.
+        Fehlerübersicht wird in Story 1.5 umgesetzt.
       </p>
     </PageShell>
   );

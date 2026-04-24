@@ -42,3 +42,10 @@ export const ROLE_ALLOWED_PATHS: Record<AppRole, readonly string[]> = {
   warehouse: ["/articles"],
   technician: ["/tour", "/stop"],
 };
+
+export const ROLE_LABELS_DE: Record<AppRole, string> = {
+  admin: "Geschäftsleitung",
+  office: "Büro",
+  technician: "Monteur",
+  warehouse: "Lager",
+};

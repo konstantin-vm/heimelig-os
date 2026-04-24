@@ -1,10 +1,11 @@
+import { PageShell } from "@/components/composed";
+
 export default function DashboardPage() {
   return (
-    <>
-      <h1 className="text-2xl font-semibold">Dashboard — Platzhalter</h1>
-      <p className="mt-2 text-muted-foreground">
-        Shell und echter Inhalt folgen in Story 1.4 und Epic 2+.
+    <PageShell title="Dashboard">
+      <p className="text-sm text-muted-foreground">
+        Dashboard-Inhalte werden in späteren Epics umgesetzt.
       </p>
-    </>
+    </PageShell>
   );
 }

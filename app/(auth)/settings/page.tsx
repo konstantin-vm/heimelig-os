@@ -1,10 +1,10 @@
 import { PageShell } from "@/components/composed";
 
-export default function ArticlesPage() {
+export default function SettingsPage() {
   return (
-    <PageShell title="Artikel">
+    <PageShell title="Einstellungen">
       <p className="text-sm text-muted-foreground">
-        Wird in Epic 3 umgesetzt.
+        Wird in einer separaten Settings-Story umgesetzt.
       </p>
     </PageShell>
   );

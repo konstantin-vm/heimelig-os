@@ -1,10 +1,10 @@
 import { PageShell } from "@/components/composed";
 
-export default function ArticlesPage() {
+export default function OrdersPage() {
   return (
-    <PageShell title="Artikel">
+    <PageShell title="Aufträge">
       <p className="text-sm text-muted-foreground">
-        Wird in Epic 3 umgesetzt.
+        Wird in Epic 4 umgesetzt.
       </p>
     </PageShell>
   );

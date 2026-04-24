@@ -28,21 +28,25 @@ export async function loadShellSession(): Promise<ShellSession | null> {
   let displayName = email ? (email.split("@")[0] ?? "") : "";
 
   if (userId) {
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
       .select("display_name, email")
       .eq("id", userId)
       .maybeSingle();
+
+    if (profileError) {
+      console.warn("[shell-session] user_profiles query failed:", profileError.message);
+    }
 
     if (profile) {
       if (profile.display_name && profile.display_name.trim().length > 0) {
         displayName = profile.display_name;
       }
       if (profile.email && profile.email.length > 0 && !email) {
-        return { role, displayName, email: profile.email };
+        return { role, displayName: displayName || "Benutzer", email: profile.email };
       }
     }
   }
 
-  return { role, displayName: displayName || email, email };
+  return { role, displayName: displayName || email || "Benutzer", email };
 }

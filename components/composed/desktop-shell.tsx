@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Menu } from "lucide-react";
 
-import type { NavItem } from "@/lib/constants/navigation";
+import { navItemsFor } from "@/lib/constants/navigation";
 import type { AppRole } from "@/lib/constants/roles";
 
 import { SidebarNav } from "./sidebar-nav";
@@ -13,7 +13,6 @@ type DesktopShellProps = {
   role: AppRole;
   displayName: string;
   email: string;
-  items: readonly NavItem[];
   children: React.ReactNode;
 };
 
@@ -21,10 +20,13 @@ export function DesktopShell({
   role,
   displayName,
   email,
-  items,
   children,
 }: DesktopShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const items = useMemo(
+    () => navItemsFor(role).filter((i) => i.shell === "desktop"),
+    [role],
+  );
 
   return (
     <div className="flex min-h-svh w-full">

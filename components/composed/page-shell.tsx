@@ -48,7 +48,7 @@ export function PageShell({
           </div>
         ) : null}
       </header>
-      <section className="flex flex-col gap-4">{children}</section>
+      <div className="flex flex-col gap-4">{children}</div>
     </div>
   );
 }

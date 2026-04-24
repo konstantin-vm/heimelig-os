@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
@@ -62,15 +62,23 @@ export function SidebarNav({
   onCloseDrawer,
 }: SidebarNavProps) {
   const pathname = usePathname();
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  const handleClose = useCallback(() => {
+    onCloseDrawer();
+    triggerRef.current?.focus();
+  }, [onCloseDrawer]);
 
   useEffect(() => {
     if (!drawerOpen) return;
+    triggerRef.current = document.activeElement as HTMLElement | null;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCloseDrawer();
+      if (event.key === "Escape") handleClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [drawerOpen, onCloseDrawer]);
+  }, [drawerOpen, handleClose]);
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -79,6 +87,38 @@ export function SidebarNav({
     return () => {
       document.body.style.overflow = previous;
     };
+  }, [drawerOpen]);
+
+  useEffect(() => {
+    if (!drawerOpen || !drawerRef.current) return;
+    const panel = drawerRef.current;
+    const focusable = panel.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    first?.focus();
+
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      if (event.shiftKey) {
+        if (document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    panel.addEventListener("keydown", trapFocus);
+    return () => panel.removeEventListener("keydown", trapFocus);
   }, [drawerOpen]);
 
   return (
@@ -104,18 +144,21 @@ export function SidebarNav({
           aria-modal="true"
           aria-label="Navigation"
         >
-          <button
-            type="button"
-            aria-label="Navigation schließen"
-            onClick={onCloseDrawer}
-            className="absolute inset-0 bg-foreground/40"
+          {/* P3: backdrop as div, not button */}
+          <div
+            role="presentation"
+            onClick={handleClose}
+            className="absolute inset-0 cursor-pointer bg-foreground/40"
           />
-          <div className="relative flex h-full w-72 max-w-[85%] flex-col border-r bg-background shadow-xl">
+          <div
+            ref={drawerRef}
+            className="relative flex h-full w-72 max-w-[85%] flex-col border-r bg-background shadow-xl"
+          >
             <div className="flex h-16 items-center justify-between border-b px-4">
               <span className="text-base font-semibold">{BRAND_WORDMARK}</span>
               <button
                 type="button"
-                onClick={onCloseDrawer}
+                onClick={handleClose}
                 aria-label="Navigation schließen"
                 className="inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
               >
@@ -129,7 +172,7 @@ export function SidebarNav({
               <NavList
                 items={items}
                 pathname={pathname}
-                onNavigate={onCloseDrawer}
+                onNavigate={handleClose}
               />
             </nav>
           </div>

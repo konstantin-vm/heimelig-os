@@ -1,21 +1,27 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import type { NavItem } from "@/lib/constants/navigation";
+import { navItemsFor } from "@/lib/constants/navigation";
+import type { AppRole } from "@/lib/constants/roles";
 import { cn } from "@/lib/utils";
 
 type BottomNavProps = {
-  items: readonly NavItem[];
+  role: AppRole;
 };
 
 function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function BottomNav({ items }: BottomNavProps) {
+export function BottomNav({ role }: BottomNavProps) {
   const pathname = usePathname();
+  const items = useMemo(
+    () => navItemsFor(role).filter((i) => i.shell === "mobile"),
+    [role],
+  );
 
   if (items.length === 0) return null;
 

@@ -52,7 +52,7 @@ export type Database = {
           height_cm?: number | null
           id?: string
           is_active?: boolean
-          is_serialized?: boolean
+          is_serialized: boolean
           length_cm?: number | null
           manufacturer?: string | null
           manufacturer_ref?: string | null

@@ -35,9 +35,9 @@ export const priceListSchema = z
     updated_by: uuidSchema.nullable(),
   })
   .refine(
-    (v) => v.valid_to === null || v.valid_to >= v.valid_from,
+    (v) => v.valid_to === null || v.valid_to > v.valid_from,
     {
-      error: "valid_to darf nicht vor valid_from liegen",
+      error: "valid_to muss nach valid_from liegen (gleiches Datum nicht erlaubt)",
       path: ["valid_to"],
     },
   );
@@ -53,9 +53,9 @@ export const priceListCreateSchema = z
     notes: z.string().nullable().optional(),
   })
   .refine(
-    (v) => v.valid_to == null || v.valid_to >= v.valid_from,
+    (v) => v.valid_to == null || v.valid_to > v.valid_from,
     {
-      error: "valid_to darf nicht vor valid_from liegen",
+      error: "valid_to muss nach valid_from liegen (gleiches Datum nicht erlaubt)",
       path: ["valid_to"],
     },
   );

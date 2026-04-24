@@ -253,11 +253,14 @@ export const customerInsuranceSchema = z
     updated_by: uuidSchema.nullable(),
   })
   .refine(
-    (v) =>
-      v.partner_insurer_id !== null || (v.insurer_name_freetext?.trim() ?? "") !== "",
+    (v) => {
+      const hasPartner = v.partner_insurer_id !== null;
+      const hasFreetext = (v.insurer_name_freetext?.trim() ?? "") !== "";
+      return hasPartner !== hasFreetext;
+    },
     {
       error:
-        "Entweder Partner-Versicherer wählen oder Freitext-Namen angeben.",
+        "Genau eines muss gesetzt sein: Partner-Versicherer ODER Freitext-Name (nicht beides).",
       path: ["partner_insurer_id"],
     },
   );
@@ -275,12 +278,14 @@ export const customerInsuranceCreateSchema = z
     is_active: z.boolean().default(true),
   })
   .refine(
-    (v) =>
-      (v.partner_insurer_id ?? null) !== null ||
-      ((v.insurer_name_freetext ?? "") !== ""),
+    (v) => {
+      const hasPartner = (v.partner_insurer_id ?? null) !== null;
+      const hasFreetext = (v.insurer_name_freetext ?? "") !== "";
+      return hasPartner !== hasFreetext;
+    },
     {
       error:
-        "Entweder Partner-Versicherer wählen oder Freitext-Namen angeben.",
+        "Genau eines muss gesetzt sein: Partner-Versicherer ODER Freitext-Name (nicht beides).",
       path: ["partner_insurer_id"],
     },
   );

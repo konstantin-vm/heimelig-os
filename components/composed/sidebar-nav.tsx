@@ -145,10 +145,16 @@ function SidebarExpandable({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem(ARTIKEL_STORAGE_KEY);
+    // TODO(Lilian, Story 1.4 polish): React 19 lint flags setState-in-effect.
+    // Consider deriving expanded state from props/localStorage at render time.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (stored !== null) setExpanded(stored === "true");
   }, []);
 
   useEffect(() => {
+    // TODO(Lilian, Story 1.4 polish): mirror-prop-into-state antipattern.
+    // Likely solvable by deriving `expanded` from `hasActiveChild` directly.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (hasActiveChild) setExpanded(true);
   }, [hasActiveChild]);
 
@@ -253,6 +259,10 @@ function SidebarContent({
           item.adminSection && !adminSectionRendered ? (
             <SidebarSectionTitle key={`section-${item.key}`} label="Admin" />
           ) : null;
+        // TODO(Lilian, Story 1.4 polish): mutating local var in render is flagged
+        // by react-hooks/immutability. Consider precomputing the first-admin index
+        // before the .map() and rendering the section title via index check.
+        // eslint-disable-next-line react-hooks/immutability
         if (item.adminSection) adminSectionRendered = true;
 
         const node = item.children?.length ? (

@@ -23,16 +23,15 @@ NNNNN_description.sql
 | `00015`        | Story 1.5 review round 1 fixes (applied 2026-04-27). |
 | `00016–00018`  | Story 1.6 — storage bucket policies.                |
 | `00019–00020`  | Story 1.7 — bexio credentials + OAuth2 plumbing.    |
-| `00021+`       | Epic 2–9 stories. Announce + reserve before using.  |
-
-Before creating a new migration file, **announce the number in `#client-heimelig-custom-erp`** and wait ~1 minute for an ACK from the other developer. The numeric gate is the only coordination mechanism we have — collisions corrupt the migration history.
+| `00021+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
 
 ## Coordination protocol
 
-1. `ls supabase/migrations/` to see the highest in-use number.
-2. Claim the next `NNNNN` in Slack with the filename you intend to create.
-3. Create the file *only* after the ACK.
-4. Never edit an applied migration — write a follow-up migration instead.
+**Solo workflow (current state):** `ls supabase/migrations/` → take the next free number in your story's reserved range (see "Reserved number ranges" above). No further coordination needed. Update the reserved-range table to mark the consumed numbers as applied; leave any unused slot in the range as "reserved (unused)".
+
+**Multi-dev workflow:** Reinstate when a second developer is actively pushing migrations. Then: `git pull` once at session start (not per migration). On `git push` non-fast-forward, the loser writes a fix-up migration with the next free number — never rewrite history or edit an applied migration.
+
+Always: never edit an applied migration. Write a follow-up migration instead.
 
 ## Applying migrations
 
@@ -228,7 +227,7 @@ log_error(
 
 ## Per-migration checklist
 
-- [ ] Filename matches `NNNNN_description.sql` and the number was announced.
+- [ ] Filename matches `NNNNN_description.sql` and the number is the next free slot in the relevant reserved range.
 - [ ] Idempotent where possible (`create … if not exists`, `drop … if exists`, `create or replace`).
 - [ ] `enable row level security` + `force row level security` for every new public table.
 - [ ] Policies use helper functions, target `authenticated`, follow naming convention.

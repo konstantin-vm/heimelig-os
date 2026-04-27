@@ -2,6 +2,7 @@ import { Suspense } from "react";
 
 import { DesktopShell } from "@/components/composed/desktop-shell";
 import { loadShellSession } from "@/components/composed/shell-session";
+import { navItemsFor } from "@/lib/constants/navigation";
 
 async function DesktopChrome({ children }: { children: React.ReactNode }) {
   const session = await loadShellSession();
@@ -14,6 +15,7 @@ async function DesktopChrome({ children }: { children: React.ReactNode }) {
       role={session.role}
       displayName={session.displayName}
       email={session.email}
+      items={navItemsFor(session.role)}
     >
       {children}
     </DesktopShell>

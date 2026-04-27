@@ -134,6 +134,69 @@ export type Database = {
           },
         ]
       }
+      audit_log: {
+        Row: {
+          action: string
+          actor_system: string | null
+          actor_user_id: string | null
+          after_values: Json | null
+          before_values: Json | null
+          created_at: string
+          details: Json | null
+          entity: string
+          entity_id: string
+          id: string
+          ip_address: unknown
+          request_id: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          actor_system?: string | null
+          actor_user_id?: string | null
+          after_values?: Json | null
+          before_values?: Json | null
+          created_at?: string
+          details?: Json | null
+          entity: string
+          entity_id: string
+          id?: string
+          ip_address?: unknown
+          request_id?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          actor_system?: string | null
+          actor_user_id?: string | null
+          after_values?: Json | null
+          before_values?: Json | null
+          created_at?: string
+          details?: Json | null
+          entity?: string
+          entity_id?: string
+          id?: string
+          ip_address?: unknown
+          request_id?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_log_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_persons: {
         Row: {
           created_at: string
@@ -680,6 +743,86 @@ export type Database = {
           },
         ]
       }
+      error_log: {
+        Row: {
+          created_at: string
+          details: Json | null
+          entity: string | null
+          entity_id: string | null
+          error_type: string
+          id: string
+          message: string
+          request_id: string | null
+          resolution_notes: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: string
+          source: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          details?: Json | null
+          entity?: string | null
+          entity_id?: string | null
+          error_type: string
+          id?: string
+          message: string
+          request_id?: string | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          source: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          details?: Json | null
+          entity?: string | null
+          entity_id?: string | null
+          error_type?: string
+          id?: string
+          message?: string
+          request_id?: string | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          source?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "error_log_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "error_log_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "error_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "error_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       partner_insurers: {
         Row: {
           bexio_contact_id: number | null
@@ -1168,6 +1311,31 @@ export type Database = {
       is_office: { Args: never; Returns: boolean }
       is_technician: { Args: never; Returns: boolean }
       is_warehouse: { Args: never; Returns: boolean }
+      log_activity: {
+        Args: {
+          p_action: string
+          p_after?: Json
+          p_before?: Json
+          p_details?: Json
+          p_entity: string
+          p_entity_id: string
+        }
+        Returns: string
+      }
+      log_error: {
+        Args: {
+          p_details?: Json
+          p_entity?: string
+          p_entity_id?: string
+          p_error_type: string
+          p_message: string
+          p_request_id?: string
+          p_severity: string
+          p_source: string
+        }
+        Returns: string
+      }
+      purge_resolved_error_log: { Args: never; Returns: number }
     }
     Enums: {
       [_ in never]: never

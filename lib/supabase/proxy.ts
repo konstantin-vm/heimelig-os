@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { ROLE_ALLOWED_PATHS } from "@/lib/constants/roles";
 import { getSessionRole, landingPathFor } from "@/lib/supabase/session";
+import { logError } from "@/lib/utils/error-log";
 
 // Paths served without a session. "/" is handled separately (root redirect).
 const PUBLIC_AUTH_PREFIXES = ["/auth/"];
@@ -97,16 +98,39 @@ export async function updateSession(request: NextRequest) {
   const role = getSessionRole(user);
   if (role === null) {
     // Authenticated session but no app_role set — stuck until admin fixes it.
-    // console.warn is intentional until Story 1.5 wires error_log.
-    console.warn(
-      `[proxy] authenticated user ${user.sub ?? "?"} has no app_role; redirecting from ${pathname}`,
+    // nDSG: proxy.ts runs on Vercel Frankfurt — never pass PII (email, name)
+    // to logError. user_id (UUID) and pathname are safe.
+    await logError(
+      {
+        errorType: "AUTH",
+        severity: "warning",
+        source: "proxy",
+        message: "authenticated user has no app_role",
+        details: {
+          user_id: typeof user.sub === "string" ? user.sub : null,
+          pathname,
+        },
+      },
+      supabase,
     );
     return redirectTo(request, "/auth/error?error=no_role_assigned");
   }
 
   if (!pathAllowedForRole(pathname, ROLE_ALLOWED_PATHS[role])) {
-    console.warn(
-      `[proxy] role=${role} denied on ${pathname}; redirecting to ${landingPathFor(role)}`,
+    await logError(
+      {
+        errorType: "AUTH",
+        severity: "warning",
+        source: "proxy",
+        message: "authenticated user hit unauthorized path",
+        details: {
+          user_id: typeof user.sub === "string" ? user.sub : null,
+          role,
+          pathname,
+          landing: landingPathFor(role),
+        },
+      },
+      supabase,
     );
     return redirectTo(request, landingPathFor(role));
   }

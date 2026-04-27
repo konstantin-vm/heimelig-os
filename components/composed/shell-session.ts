@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getSessionRole } from "@/lib/supabase/session";
 import type { AppRole } from "@/lib/constants/roles";
+import { logError } from "@/lib/utils/error-log";
 
 export type ShellSession = {
   role: AppRole;
@@ -35,7 +36,21 @@ export async function loadShellSession(): Promise<ShellSession | null> {
       .maybeSingle();
 
     if (profileError) {
-      console.warn("[shell-session] user_profiles query failed:", profileError.message);
+      // nDSG: do not log email/display_name — pass error codes + user_id only.
+      await logError(
+        {
+          errorType: "DB_FUNCTION",
+          severity: "warning",
+          source: "shell-session",
+          message: "user_profiles query failed",
+          details: {
+            user_id: userId,
+            pg_code: profileError.code ?? null,
+            pg_message: profileError.message,
+          },
+        },
+        supabase,
+      );
     }
 
     if (profile) {

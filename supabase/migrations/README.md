@@ -16,12 +16,14 @@ NNNNN_description.sql
 
 | Range          | Owner / purpose                                      |
 |----------------|------------------------------------------------------|
-| `00001–00009`  | Story 1.3 — foundation schema + RLS (in use).       |
-| `00010`        | Reserved (buffer for Story 1.3 fix-ups).            |
-| `00011–00014`  | Story 1.5 — audit_log / error_log infrastructure.   |
-| `00015–00017`  | Story 1.6 — storage bucket policies.                |
-| `00018–00019`  | Story 1.7 — bexio credentials + OAuth2 plumbing.    |
-| `00020+`       | Epic 2–9 stories. Announce + reserve before using.  |
+| `00001–00009`  | Story 1.3 — foundation schema + RLS (applied).      |
+| `00010`        | Story 1.3 review round 1 fixes (applied).           |
+| `00011`        | Story 1.3 review round 2 fixes (applied).           |
+| `00012–00014`  | Story 1.5 — audit_log / error_log infrastructure (applied). |
+| `00015`        | Story 1.5 review round 1 fixes (applied 2026-04-27). |
+| `00016–00018`  | Story 1.6 — storage bucket policies.                |
+| `00019–00020`  | Story 1.7 — bexio credentials + OAuth2 plumbing.    |
+| `00021+`       | Epic 2–9 stories. Announce + reserve before using.  |
 
 Before creating a new migration file, **announce the number in `#client-heimelig-custom-erp`** and wait ~1 minute for an ACK from the other developer. The numeric gate is the only coordination mechanism we have — collisions corrupt the migration history.
 
@@ -165,9 +167,64 @@ pnpm db:types   # supabase gen types typescript --project-id zjrlpczyljgcibhdqcc
 - Commit the regenerated `lib/supabase/types.ts` **in the same commit** as the migration that changed the schema.
 - Zod schemas live in `lib/validations/`. If Zod and the regenerated types disagree, **types win** (DB is the truth) — adapt the Zod schema and commit both together.
 
-## `log_activity()` placeholder
+## `log_activity()` — audit write path
 
-`log_activity()` ships in Story 1.5. Until then, every write path that will eventually emit an audit record should carry a `-- TODO(1.5): log_activity(...)` comment with the intended call shape. This keeps the audit trail visible in review while the function itself is pending.
+`log_activity()` ships as of migration `00012_audit_log.sql` (Story 1.5). Signature:
+
+```sql
+log_activity(
+  p_action    text,
+  p_entity    text,
+  p_entity_id uuid,
+  p_before    jsonb default null,
+  p_after     jsonb default null,
+  p_details   jsonb default '{}'::jsonb
+) returns uuid
+```
+
+- `SECURITY DEFINER`, `set search_path = public, pg_temp`.
+- Resolves `actor_user_id` from `auth.uid()`. For service-role / pg_cron callers (`auth.uid()` is NULL), pass `p_details = jsonb_build_object('actor_system', '<source>')` where `<source>` is one of `pg_cron | billing_run | payment_sync | contact_sync | dunning_run | migration | other`.
+- Writes happen inside the caller's transaction. On failure the caller's transaction rolls back — this is the Audit-First rule.
+- `audit_log` rows are immutable (trigger `audit_log_immutable` rejects UPDATE/DELETE with SQLSTATE 42501).
+
+Every `transition_*` function + every DB function that changes business state must call `log_activity()` at least once. Reviewers reject PRs that mutate state without a `log_activity` call.
+
+### Generic audit trigger
+
+Migration `00014_audit_triggers_and_cron.sql` ships `public.audit_trigger_fn()` — a delta-aware `AFTER INSERT OR UPDATE OR DELETE` trigger for the 11 Sprint-1 business tables (see migration for the list). It records only columns that actually changed and suppresses `updated_at` / `updated_by` to keep noise out of audit.
+
+**Binding recipe for a new table** (copy into the migration that creates the table):
+
+```sql
+drop trigger if exists trg_<table>_audit on public.<table>;
+create trigger trg_<table>_audit
+  after insert or update or delete on public.<table>
+  for each row execute function public.audit_trigger_fn('updated_at', 'updated_by');
+```
+
+Pass column names to `audit_trigger_fn()` as TG_ARGV[] to suppress them from the delta (useful for timestamp-only updates and derived columns). For tables without `updated_at` / `updated_by`, pass fewer arguments.
+
+### Error-log write path — `log_error()`
+
+Shipped in `00013_error_log.sql`. Signature:
+
+```sql
+log_error(
+  p_error_type  text,  -- BEXIO_API | RLS_VIOLATION | VALIDATION | EDGE_FUNCTION | DB_FUNCTION | REALTIME | AUTH | MIGRATION | TOUR_PLANNING | INVENTORY | MAIL_PROVIDER | EXTERNAL_API | OTHER
+  p_severity    text,  -- critical | error | warning | info
+  p_source      text,
+  p_message     text,
+  p_details     jsonb default '{}'::jsonb,
+  p_entity      text default null,
+  p_entity_id   uuid default null,
+  p_request_id  text default null
+) returns uuid
+```
+
+- `SECURITY DEFINER`, best-effort (`EXCEPTION WHEN OTHERS` swallows + emits `pg_notify('error_log_write_failed', …)`, returns NULL).
+- Never rolls back the caller's transaction.
+- **nDSG rule:** `p_details` MUST NOT contain raw customer PII (names, addresses, insurance numbers, emails). Pass IDs + structured codes only.
+- From TypeScript: `lib/utils/error-log.ts` exports `logError({ errorType, severity, source, message, details?, entity?, entityId?, requestId? }, supabaseClient)`.
 
 ## Per-migration checklist
 

@@ -21,9 +21,11 @@ NNNNN_description.sql
 | `00011`        | Story 1.3 review round 2 fixes (applied).           |
 | `00012–00014`  | Story 1.5 — audit_log / error_log infrastructure (applied). |
 | `00015`        | Story 1.5 review round 1 fixes (applied 2026-04-27). |
-| `00016–00018`  | Story 1.6 — storage bucket policies.                |
-| `00019–00020`  | Story 1.7 — bexio credentials + OAuth2 plumbing.    |
-| `00021+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
+| `00016`        | Story 1.5 review round 2 fixes — FK-cascade-vs-immutability narrow exception (applied 2026-04-27). |
+| `00017`        | Story 1.5 review round 3 fixes — dual-cascade gap on error_log + decomposed guard (applied 2026-04-27). |
+| `00018–00020`  | Story 1.6 — storage bucket policies.                |
+| `00021–00022`  | Story 1.7 — bexio credentials + OAuth2 plumbing.    |
+| `00023+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
 
 ## Coordination protocol
 
@@ -192,6 +194,8 @@ Every `transition_*` function + every DB function that changes business state mu
 
 Migration `00014_audit_triggers_and_cron.sql` ships `public.audit_trigger_fn()` — a delta-aware `AFTER INSERT OR UPDATE OR DELETE` trigger for the 11 Sprint-1 business tables (see migration for the list). It records only columns that actually changed and suppresses `updated_at` / `updated_by` to keep noise out of audit.
 
+**Contract — UUID primary key required.** `audit_trigger_fn()` writes `entity_id` by casting `(to_jsonb(NEW/OLD) ->> 'id')::uuid`. Every public table is mandated to have a UUID `id` column (see "Naming conventions" below — `bigint`/`serial`/`identity` PKs are forbidden), so this is a non-issue today. If a future migration creates a public table that legitimately cannot have a UUID `id` (e.g., a junction table without a surrogate key), DO NOT bind `audit_trigger_fn` to it: introduce a `uuid` surrogate column or write a per-table audit trigger that derives `entity_id` differently. Re-bumped in 00016 header.
+
 **Binding recipe for a new table** (copy into the migration that creates the table):
 
 ```sql
@@ -202,6 +206,18 @@ create trigger trg_<table>_audit
 ```
 
 Pass column names to `audit_trigger_fn()` as TG_ARGV[] to suppress them from the delta (useful for timestamp-only updates and derived columns). For tables without `updated_at` / `updated_by`, pass fewer arguments.
+
+### FK ON DELETE SET NULL on audit_log / error_log
+
+`audit_log.actor_user_id`, `error_log.user_id`, and `error_log.resolved_by` all reference `user_profiles(id) ON DELETE SET NULL`. This means deleting a `user_profiles` row triggers a system-emitted UPDATE on the log tables. Without an exception, the immutability trigger (`audit_log_immutable`) and update-guard (`error_log_update_guard`) would block this cascade and admin couldn't delete a user with audit history.
+
+Migration `00016_story_1_5_review_critical_fixes.sql` introduced narrow cascade-allow branches; migration `00017_story_1_5_review_round3_fixes.sql` decomposed the guards into orthogonal checks so the dual-cascade case (`user_id` AND `resolved_by` of the same `error_log` row both nulled in one trigger invocation — realistic when a user logs an error and later resolves it themselves) is handled naturally:
+
+- **Immutable columns** (any change → 42501): `id`, `error_type`, `severity`, `source`, `message`, `details`, `entity`, `entity_id`, `request_id`, `created_at` (and the analogous set on `audit_log`).
+- **FK-cascade column** (only the non-null → NULL transition is permitted): `audit_log.actor_user_id`, `error_log.user_id`. Any other change → 42501.
+- **Resolution columns** (free, error_log only): `resolved_at`, `resolved_by`, `resolution_notes`. `resolved_by` cascade transitions are absorbed transparently here.
+
+**Practical implication:** when admin deletes a `user_profiles` row, the historical audit/error rows persist with their actor/user reference nulled. The forensic trail (action, entity, before/after, timestamp, request_id) survives. Both single-FK cascades (audit_log) and the dual-FK cascade (error_log: user_id + resolved_by simultaneously) are validated by smoke Case J.
 
 ### Error-log write path — `log_error()`
 

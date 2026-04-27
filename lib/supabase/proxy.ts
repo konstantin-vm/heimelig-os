@@ -7,6 +7,35 @@ import { logError } from "@/lib/utils/error-log";
 // Paths served without a session. "/" is handled separately (root redirect).
 const PUBLIC_AUTH_PREFIXES = ["/auth/"];
 
+// Bound how long the middleware waits on the cross-region (Frankfurt → Zürich)
+// log_error RPC. The redirect is what the user actually needs; logging is
+// best-effort. logError() never throws, so the only thing we need to defend
+// against is latency. 500ms keeps degraded-Supabase requests from feeling
+// stuck while still giving a healthy round-trip room to complete.
+const LOG_ERROR_TIMEOUT_MS = 500;
+
+async function logErrorBounded(
+  ...args: Parameters<typeof logError>
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, LOG_ERROR_TIMEOUT_MS);
+  });
+  // logError() resolves with { ok } and is documented never to throw; the
+  // .catch() below is belt-and-braces against future regressions so a stray
+  // rejection cannot escape Promise.race as an unhandled rejection on the
+  // Edge runtime. If the timeout wins, the underlying RPC is dropped on the
+  // next tear-down (Vercel Edge does not currently retain in-flight promises
+  // across the redirect response — best-effort logging by design).
+  await Promise.race([
+    logError(...args)
+      .then(() => undefined)
+      .catch(() => undefined),
+    timeout,
+  ]);
+  if (timer !== undefined) clearTimeout(timer);
+}
+
 // Auth pages that an already-authenticated user must not land on.
 // /auth/confirm (OTP) and /auth/error must stay reachable for logged-in users.
 const AUTH_REDIRECT_AWAY_PREFIXES = [
@@ -100,7 +129,7 @@ export async function updateSession(request: NextRequest) {
     // Authenticated session but no app_role set — stuck until admin fixes it.
     // nDSG: proxy.ts runs on Vercel Frankfurt — never pass PII (email, name)
     // to logError. user_id (UUID) and pathname are safe.
-    await logError(
+    await logErrorBounded(
       {
         errorType: "AUTH",
         severity: "warning",
@@ -117,7 +146,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (!pathAllowedForRole(pathname, ROLE_ALLOWED_PATHS[role])) {
-    await logError(
+    await logErrorBounded(
       {
         errorType: "AUTH",
         severity: "warning",

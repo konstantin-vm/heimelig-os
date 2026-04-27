@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -361,15 +361,23 @@ export function SidebarNav({
   onCloseDrawer,
 }: SidebarNavProps) {
   const pathname = usePathname();
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  const handleClose = useCallback(() => {
+    onCloseDrawer();
+    triggerRef.current?.focus();
+  }, [onCloseDrawer]);
 
   useEffect(() => {
     if (!drawerOpen) return;
+    triggerRef.current = document.activeElement as HTMLElement | null;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCloseDrawer();
+      if (event.key === "Escape") handleClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [drawerOpen, onCloseDrawer]);
+  }, [drawerOpen, handleClose]);
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -378,6 +386,38 @@ export function SidebarNav({
     return () => {
       document.body.style.overflow = previous;
     };
+  }, [drawerOpen]);
+
+  useEffect(() => {
+    if (!drawerOpen || !drawerRef.current) return;
+    const panel = drawerRef.current;
+    const focusable = panel.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    first?.focus();
+
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      if (event.shiftKey) {
+        if (document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    panel.addEventListener("keydown", trapFocus);
+    return () => panel.removeEventListener("keydown", trapFocus);
   }, [drawerOpen]);
 
   const shellClasses =
@@ -400,18 +440,17 @@ export function SidebarNav({
           aria-modal="true"
           aria-label="Navigation"
         >
-          <button
-            type="button"
-            aria-label="Navigation schließen"
-            onClick={onCloseDrawer}
-            className="absolute inset-0 bg-foreground/40"
+          <div
+            role="presentation"
+            onClick={handleClose}
+            className="absolute inset-0 cursor-pointer bg-foreground/40"
           />
-          <div className={cn("relative max-w-[85%] shadow-xl", shellClasses)}>
+          <div ref={drawerRef} className={cn("relative max-w-[85%] shadow-xl", shellClasses)}>
             <div className="flex items-start justify-between gap-2">
               <SidebarHeader role={role} />
               <button
                 type="button"
-                onClick={onCloseDrawer}
+                onClick={handleClose}
                 aria-label="Navigation schließen"
                 className="mt-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-white/5 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
               >
@@ -422,7 +461,7 @@ export function SidebarNav({
               items={items}
               pathname={pathname}
               counters={counters}
-              onNavigate={onCloseDrawer}
+              onNavigate={handleClose}
             />
             <SidebarFooter displayName={displayName} email={email} />
           </div>

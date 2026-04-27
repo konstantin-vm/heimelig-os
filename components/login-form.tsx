@@ -96,12 +96,13 @@ export function LoginForm({
                 <Input
                   id="email"
                   type="email"
+                  placeholder="name@beispiel.ch"
                   autoComplete="email"
                   aria-invalid={Boolean(errors.email) || undefined}
                   {...register("email")}
                 />
                 {errors.email?.message && (
-                  <p className="text-sm text-red-500">{errors.email.message}</p>
+                  <p className="text-sm text-destructive">{errors.email.message}</p>
                 )}
               </div>
               <div className="grid gap-2">
@@ -109,18 +110,19 @@ export function LoginForm({
                 <Input
                   id="password"
                   type="password"
+                  placeholder="Passwort eingeben"
                   autoComplete="current-password"
                   aria-invalid={Boolean(errors.password) || undefined}
                   {...register("password")}
                 />
                 {errors.password?.message && (
-                  <p className="text-sm text-red-500">
+                  <p className="text-sm text-destructive">
                     {errors.password.message}
                   </p>
                 )}
               </div>
               {submitError && (
-                <p className="text-sm text-red-500" role="alert">
+                <p className="text-sm text-destructive" role="alert">
                   {submitError}
                 </p>
               )}

@@ -1,29 +1,37 @@
-import {
-  AlertTriangle,
-  ClipboardList,
-  FileText,
-  LayoutDashboard,
-  Package,
-  Receipt,
-  Route,
-  Settings,
-  Truck,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
-
 import { ROLE_ALLOWED_PATHS, type AppRole } from "@/lib/constants/roles";
 
 export type NavShell = "desktop" | "mobile";
+
+export type SidebarCounterKey = "orders" | "contracts" | "invoices";
+
+export type NavIconKey =
+  | "dashboard"
+  | "customers"
+  | "articles"
+  | "orders"
+  | "contracts"
+  | "invoices"
+  | "tours"
+  | "settings"
+  | "tour";
+
+export type NavSubItem = {
+  key: string;
+  labelDe: string;
+  href: string;
+  roles: readonly AppRole[];
+};
 
 export type NavItem = {
   key: string;
   labelDe: string;
   href: string;
-  icon: LucideIcon;
+  iconKey: NavIconKey;
   roles: readonly AppRole[];
   shell: NavShell;
-  adminOnly?: boolean;
+  children?: readonly NavSubItem[];
+  adminSection?: boolean;
+  counterKey?: SidebarCounterKey;
 };
 
 export const DESKTOP_NAV: readonly NavItem[] = [
@@ -31,7 +39,7 @@ export const DESKTOP_NAV: readonly NavItem[] = [
     key: "dashboard",
     labelDe: "Dashboard",
     href: "/dashboard",
-    icon: LayoutDashboard,
+    iconKey: "dashboard",
     roles: ["admin", "office"],
     shell: "desktop",
   },
@@ -39,7 +47,7 @@ export const DESKTOP_NAV: readonly NavItem[] = [
     key: "customers",
     labelDe: "Kunden",
     href: "/customers",
-    icon: Users,
+    iconKey: "customers",
     roles: ["admin", "office"],
     shell: "desktop",
   },
@@ -47,39 +55,74 @@ export const DESKTOP_NAV: readonly NavItem[] = [
     key: "articles",
     labelDe: "Artikel",
     href: "/articles",
-    icon: Package,
+    iconKey: "articles",
     roles: ["admin", "office", "warehouse"],
     shell: "desktop",
+    children: [
+      {
+        key: "articles.products",
+        labelDe: "Produkte",
+        href: "/articles",
+        roles: ["admin", "office", "warehouse"],
+      },
+      {
+        key: "articles.devices",
+        labelDe: "Geräte",
+        href: "/articles/devices",
+        roles: ["admin", "office", "warehouse"],
+      },
+      {
+        key: "articles.price-lists",
+        labelDe: "Preislisten",
+        href: "/articles/price-lists",
+        roles: ["admin", "office"],
+      },
+      {
+        key: "articles.batch",
+        labelDe: "Batch-Registrierung",
+        href: "/articles/batch",
+        roles: ["admin", "warehouse"],
+      },
+      {
+        key: "articles.scan",
+        labelDe: "QR-Etiketten",
+        href: "/articles/scan",
+        roles: ["admin", "warehouse"],
+      },
+    ],
   },
   {
     key: "orders",
     labelDe: "Aufträge",
     href: "/orders",
-    icon: ClipboardList,
+    iconKey: "orders",
     roles: ["admin", "office"],
     shell: "desktop",
+    counterKey: "orders",
   },
   {
     key: "contracts",
-    labelDe: "Mietverträge",
+    labelDe: "Verträge",
     href: "/contracts",
-    icon: FileText,
+    iconKey: "contracts",
     roles: ["admin", "office"],
     shell: "desktop",
+    counterKey: "contracts",
   },
   {
     key: "invoices",
     labelDe: "Rechnungen",
     href: "/invoices",
-    icon: Receipt,
+    iconKey: "invoices",
     roles: ["admin", "office"],
     shell: "desktop",
+    counterKey: "invoices",
   },
   {
     key: "tours",
     labelDe: "Touren",
     href: "/tours",
-    icon: Truck,
+    iconKey: "tours",
     roles: ["admin", "office"],
     shell: "desktop",
   },
@@ -87,19 +130,10 @@ export const DESKTOP_NAV: readonly NavItem[] = [
     key: "settings",
     labelDe: "Einstellungen",
     href: "/settings",
-    icon: Settings,
+    iconKey: "settings",
     roles: ["admin"],
     shell: "desktop",
-    adminOnly: true,
-  },
-  {
-    key: "errors",
-    labelDe: "Fehler",
-    href: "/errors",
-    icon: AlertTriangle,
-    roles: ["admin"],
-    shell: "desktop",
-    adminOnly: true,
+    adminSection: true,
   },
 ] as const;
 
@@ -108,7 +142,7 @@ export const MOBILE_NAV: readonly NavItem[] = [
     key: "tour",
     labelDe: "Heutige Tour",
     href: "/tour",
-    icon: Route,
+    iconKey: "tour",
     roles: ["technician"],
     shell: "mobile",
   },
@@ -117,22 +151,44 @@ export const MOBILE_NAV: readonly NavItem[] = [
 const ALL_NAV: readonly NavItem[] = [...DESKTOP_NAV, ...MOBILE_NAV];
 
 export function navItemsFor(role: AppRole): NavItem[] {
-  return ALL_NAV.filter((item) => item.roles.includes(role));
+  return ALL_NAV
+    .filter((item) => item.roles.includes(role))
+    .map((item) =>
+      item.children
+        ? {
+            ...item,
+            children: item.children.filter((child) =>
+              child.roles.includes(role),
+            ),
+          }
+        : item,
+    );
 }
 
 // Dev-time guard: every NavItem.href must match ROLE_ALLOWED_PATHS for every
 // role the item is exposed to. Prevents drift between middleware and menu.
 function assertNavHrefsCoverAllowedPaths(): void {
+  const check = (href: string, role: AppRole, key: string) => {
+    const allowed = ROLE_ALLOWED_PATHS[role];
+    const ok = allowed.some(
+      (prefix) => href === prefix || href.startsWith(`${prefix}/`),
+    );
+    if (!ok) {
+      throw new Error(
+        `[navigation] href "${href}" (key=${key}) not permitted for role "${role}" — update ROLE_ALLOWED_PATHS or NavItem.roles`,
+      );
+    }
+  };
+
   for (const item of ALL_NAV) {
     for (const role of item.roles) {
-      const allowed = ROLE_ALLOWED_PATHS[role];
-      const ok = allowed.some(
-        (prefix) => item.href === prefix || item.href.startsWith(`${prefix}/`),
-      );
-      if (!ok) {
-        throw new Error(
-          `[navigation] href "${item.href}" (key=${item.key}) not permitted for role "${role}" — update ROLE_ALLOWED_PATHS or NavItem.roles`,
-        );
+      check(item.href, role, item.key);
+    }
+    if (item.children) {
+      for (const child of item.children) {
+        for (const role of child.roles) {
+          check(child.href, role, child.key);
+        }
       }
     }
   }

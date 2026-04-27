@@ -12,8 +12,8 @@ export const config = {
      * - _next/static, _next/image
      * - favicon.ico
      * - manifest.json, sw.js, icons/* (PWA assets must be reachable anonymously)
-     * - image extensions (.svg|.png|.jpg|.jpeg|.gif|.webp)
+     * - image extensions (.svg|.png|.jpg|.jpeg|.gif|.webp|.avif)
      */
-    "/((?!_next/static|_next/image|favicon.ico|manifest.json|sw\\.js|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.json|sw\\.js|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif)$).*)",
   ],
 };

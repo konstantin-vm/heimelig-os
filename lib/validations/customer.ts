@@ -25,8 +25,24 @@ import {
 export const customerTypeValues = ["private", "institution"] as const;
 export const customerTypeSchema = z.enum(customerTypeValues);
 
-export const salutationValues = ["herr", "frau", "divers"] as const;
+export const salutationValues = [
+  "herr",
+  "frau",
+  "divers",
+  // Story 2.1.1 / MTG-009 — final invoice after death of the contract holder
+  // is addressed to the heirs ("Erbengemeinschaft"). Auto-switch on
+  // Rückgabegrund=Todesfall is owned by Story 5.3; this enum entry is the
+  // data-side prerequisite.
+  "erbengemeinschaft",
+] as const;
 export const salutationSchema = z.enum(salutationValues);
+
+export const SALUTATION_LABELS: Record<(typeof salutationValues)[number], string> = {
+  herr: "Herr",
+  frau: "Frau",
+  divers: "Divers",
+  erbengemeinschaft: "Erbengemeinschaft",
+};
 
 export const acquisitionChannelValues = [
   "spitex",
@@ -119,6 +135,10 @@ export const customerSchema = z.object({
   bexio_synced_at: isoTimestampSchema.nullable(),
   notes: z.string().nullable(),
   is_active: z.boolean(),
+  // Story 2.1.1 — IV (Invalidenversicherung) marker + dossier reference.
+  // Coupled at the DB layer via CHECK (iv_marker = false OR iv_dossier_number IS NOT NULL).
+  iv_marker: z.boolean(),
+  iv_dossier_number: z.string().nullable(),
   created_at: isoTimestampSchema,
   updated_at: isoTimestampSchema,
   created_by: uuidSchema.nullable(),
@@ -142,6 +162,8 @@ export const customerCreateSchema = customerSchema
     marketing_consent: z.boolean().default(false),
     bexio_sync_status: bexioSyncStatusSchema.default("pending"),
     is_active: z.boolean().default(true),
+    iv_marker: z.boolean().default(false),
+    iv_dossier_number: z.string().trim().min(1).nullable().optional(),
   })
   .refine(
     (value) =>
@@ -154,6 +176,19 @@ export const customerCreateSchema = customerSchema
       error:
         "Bei Privatkunden ist der Nachname Pflicht, bei Institutionen der Firmenname.",
       path: ["customer_type"],
+    },
+  )
+  // Story 2.1.1 — IV-Dossiernummer required when iv_marker=true. Mirrors the
+  // DB CHECK `customers_iv_dossier_required`; surfaced inline so the form can
+  // attach the message to the dossier-number input.
+  .refine(
+    (value) =>
+      !value.iv_marker ||
+      (typeof value.iv_dossier_number === "string" &&
+        value.iv_dossier_number.trim() !== ""),
+    {
+      error: "IV-Dossiernummer ist Pflicht, wenn der Kunde als IV markiert ist.",
+      path: ["iv_dossier_number"],
     },
   );
 
@@ -192,6 +227,20 @@ export const customerUpdateSchema = customerSchema
           code: "custom",
           path: ["company_name"],
           message: "Bei Institutionen ist der Firmenname Pflicht.",
+        });
+      }
+    }
+    // Story 2.1.1 — when iv_marker is being set to true in the patch, the
+    // patch must also carry a non-empty iv_dossier_number. Patches that only
+    // touch other fields skip this check (DB CHECK still guards a stale
+    // marker-without-dossier state).
+    if (patch.iv_marker === true) {
+      const dossier = patch.iv_dossier_number;
+      if (dossier === undefined || dossier === null || dossier.trim() === "") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["iv_dossier_number"],
+          message: "IV-Dossiernummer ist Pflicht, wenn der Kunde als IV markiert ist.",
         });
       }
     }
@@ -320,6 +369,144 @@ export const customerInsuranceUpdateSchema = z
     is_active: z.boolean().optional(),
   })
   .partial();
+
+// Form-level schema for the InsuranceDialog — validates the dialog's
+// FormValues shape directly so zodResolver can fire on blur/change. The
+// Krankenkasse Select uses a single `insurer_choice` field (partner_insurer_id
+// uuid | "" | "__andere__") that the submit handler maps onto the row schema.
+// Refinements (Story 2.3 AC7):
+//   (a) `insurer_choice` must be set;
+//   (b) `insurer_name_freetext` required when "Andere" is picked;
+//   (c) `insurance_number` required when a partner KK is picked (partner-KK
+//       billing routing in Epic 6 needs it);
+//   (d) `valid_to >= valid_from` when both dates are set.
+// PII-safety: messages reference field labels only, never user-entered values.
+const ANDERE_FORM_VALUE = "__andere__";
+
+export const customerInsuranceDialogSchema = z
+  .object({
+    insurer_choice: z.string(),
+    insurer_name_freetext: z.string(),
+    insurance_type: insuranceTypeSchema,
+    insurance_number: z.string(),
+    valid_from: z.string(),
+    valid_to: z.string(),
+    is_primary: z.boolean(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.insurer_choice === "") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["insurer_choice"],
+        message: "Bitte Krankenkasse wählen.",
+      });
+      return;
+    }
+    const isAndere = value.insurer_choice === ANDERE_FORM_VALUE;
+    if (isAndere) {
+      if (value.insurer_name_freetext.trim() === "") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["insurer_name_freetext"],
+          message: "Name der Versicherung angeben",
+        });
+      }
+    } else {
+      // Partner KK selected — Versicherten-Nr. is required.
+      if (value.insurance_number.trim() === "") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["insurance_number"],
+          message: "Versicherten-Nr. der Partnerkasse ist erforderlich",
+        });
+      }
+    }
+    if (
+      value.valid_from !== "" &&
+      value.valid_to !== "" &&
+      value.valid_to < value.valid_from
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["valid_to"],
+        message: "Gültig bis muss nach Gültig von liegen",
+      });
+    }
+  });
+
+export type CustomerInsuranceDialogValues = z.infer<
+  typeof customerInsuranceDialogSchema
+>;
+
+// Row-shape variants kept for direct API callers (not used by the dialog
+// after the 2.3 review patch; the dialog now validates FormValues directly).
+export const customerInsuranceFormCreateSchema =
+  customerInsuranceCreateSchema.superRefine((value, ctx) => {
+    const hasPartner = (value.partner_insurer_id ?? null) !== null;
+    const freetext = (value.insurer_name_freetext ?? "").trim();
+    if (hasPartner) {
+      const num = (value.insurance_number ?? "").trim();
+      if (num === "") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["insurance_number"],
+          message: "Versicherten-Nr. der Partnerkasse ist erforderlich",
+        });
+      }
+    } else if (freetext === "") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["insurer_name_freetext"],
+        message: "Name der Versicherung angeben",
+      });
+    }
+    if (value.valid_from && value.valid_to && value.valid_to < value.valid_from) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["valid_to"],
+        message: "Gültig bis muss nach Gültig von liegen",
+      });
+    }
+  });
+
+export const customerInsuranceFormUpdateSchema =
+  customerInsuranceUpdateSchema.superRefine((value, ctx) => {
+    const partnerProvided = value.partner_insurer_id !== undefined;
+    const hasPartner = partnerProvided && value.partner_insurer_id !== null;
+    if (partnerProvided) {
+      if (hasPartner) {
+        // Partner KK now set: insurance_number must be present and non-empty.
+        // Treating absent (undefined) as missing — flipping partner_insurer_id
+        // without sending a Versicherten-Nr. would otherwise leave the row in
+        // a partner-KK state with no number, breaking Epic 6 billing.
+        const num = (value.insurance_number ?? "").trim();
+        if (num === "") {
+          ctx.addIssue({
+            code: "custom",
+            path: ["insurance_number"],
+            message: "Versicherten-Nr. der Partnerkasse ist erforderlich",
+          });
+        }
+      } else {
+        // Partner cleared (set to null): freetext must be present.
+        const freetext = (value.insurer_name_freetext ?? "").trim();
+        if (freetext === "") {
+          ctx.addIssue({
+            code: "custom",
+            path: ["insurer_name_freetext"],
+            message: "Name der Versicherung angeben",
+          });
+        }
+      }
+    }
+    if (value.valid_from && value.valid_to && value.valid_to < value.valid_from) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["valid_to"],
+        message: "Gültig bis muss nach Gültig von liegen",
+      });
+    }
+  });
 
 // -------------------- contact_persons ------------
 

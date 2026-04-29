@@ -28,12 +28,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   customerCreateSchema,
   customerAddressUserInputSchema,
   customerTypeValues,
   salutationValues,
+  SALUTATION_LABELS,
   acquisitionChannelValues,
 } from "@/lib/validations/customer";
 import { languageValues } from "@/lib/validations/common";
@@ -83,6 +85,8 @@ function mapZodPathToField(
     case "marketing_consent":
     case "acquisition_channel":
     case "notes":
+    case "iv_marker":
+    case "iv_dossier_number":
     case "street":
     case "street_number":
     case "zip":
@@ -103,12 +107,6 @@ function parseFiniteNumber(input: string): number | null {
   const n = Number.parseFloat(trimmed);
   return Number.isFinite(n) ? n : Number.NaN;
 }
-
-const SALUTATION_LABELS: Record<(typeof salutationValues)[number], string> = {
-  herr: "Herr",
-  frau: "Frau",
-  divers: "Divers",
-};
 
 const LANGUAGE_LABELS: Record<(typeof languageValues)[number], string> = {
   de: "Deutsch",
@@ -150,6 +148,9 @@ const EMPTY_DEFAULTS: CustomerFormValues = {
   marketing_consent: false,
   acquisition_channel: "",
   notes: "",
+
+  iv_marker: false,
+  iv_dossier_number: "",
 
   street: "",
   street_number: "",
@@ -229,6 +230,8 @@ export function CustomerEditForm({
   // P14 — track previous customer_type so the toggle effect skips its first
   // mount and doesn't dirty the form for a no-change open.
   const prevTypeRef = useRef<string | null>(null);
+  // Story 2.1.1 — same first-mount-skip pattern for the IV-marker watcher.
+  const prevIvMarkerRef = useRef<boolean | null>(null);
 
   // Hydrate values when editing. The parent passes `key={customerId ?? "create"}`
   // so a customer switch remounts this form — the effect therefore only needs
@@ -237,6 +240,7 @@ export function CustomerEditForm({
     if (!open) {
       hydratedRef.current = false;
       prevTypeRef.current = null;
+      prevIvMarkerRef.current = null;
       return;
     }
     if (mode === "create") {
@@ -266,6 +270,9 @@ export function CustomerEditForm({
       acquisition_channel: existing.acquisition_channel ?? "",
       notes: existing.notes ?? "",
 
+      iv_marker: existing.iv_marker ?? false,
+      iv_dossier_number: existing.iv_dossier_number ?? "",
+
       street: a?.street ?? "",
       street_number: a?.street_number ?? "",
       zip: a?.zip ?? "",
@@ -289,6 +296,27 @@ export function CustomerEditForm({
 
   const customerType = watch("customer_type");
   const isPrivate = customerType === "private";
+
+  // Story 2.1.1 — when IV-Marker flips on→off, clear the dossier-number input
+  // so a flip-on/off/on-roundtrip never carries a stale value. Mirror of the
+  // customer-type-toggle pattern: skip on first run after hydration so a
+  // no-change open does not dirty the form. shouldDirty:true on a real
+  // transition makes dirtyFields track the dossier clear so the update RPC
+  // actually transmits it.
+  const watchedIvMarker = watch("iv_marker");
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (prevIvMarkerRef.current === null) {
+      prevIvMarkerRef.current = watchedIvMarker;
+      return;
+    }
+    if (prevIvMarkerRef.current === watchedIvMarker) return;
+    prevIvMarkerRef.current = watchedIvMarker;
+    if (!watchedIvMarker) {
+      setValue("iv_dossier_number", "", { shouldDirty: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedIvMarker]);
 
   // P14 — customer-type toggle clears the hidden branch's name fields so a
   // back-and-forth toggle never carries stale values into the submit payload.
@@ -403,6 +431,13 @@ export function CustomerEditForm({
       // key from the form would let an office user soft-delete a customer
       // through the edit modal by hand-crafting a payload.
       is_active: true,
+      // Story 2.1.1 — IV fields. When the marker is off, the dossier number
+      // is normalised to `null` so a stray cleared input never lands as an
+      // empty string in the DB.
+      iv_marker: values.iv_marker,
+      iv_dossier_number: values.iv_marker
+        ? nullIfEmpty(values.iv_dossier_number)
+        : null,
     };
 
     const addressPayload: CustomerAddressPayload = {
@@ -859,6 +894,64 @@ export function CustomerEditForm({
                 </div>
               </Section>
             ) : null}
+
+            {/* IV-Kennzeichnung — Story 2.1.1.
+                Not gated on customer_type: institutions can also be IV-relevant
+                administrators (e.g. Pflegeheime, die Kosten via IV abrechnen). */}
+            <Section
+              title="IV-Kennzeichnung"
+              hint="IV-Kunden brauchen eine Dossiernummer (z. B. 320/2025/004391/0)."
+            >
+              <Controller
+                name="iv_marker"
+                control={control}
+                render={({ field }) => (
+                  <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-muted/30 p-3">
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="iv_marker">IV-Kunde</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Kostengutsprache via Invalidenversicherung.
+                      </p>
+                    </div>
+                    <Switch
+                      id="iv_marker"
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </div>
+                )}
+              />
+              {watchedIvMarker ? (
+                <Controller
+                  name="iv_dossier_number"
+                  control={control}
+                  rules={{
+                    validate: (v) =>
+                      (typeof v === "string" && v.trim() !== "") ||
+                      "IV-Dossiernummer ist erforderlich.",
+                  }}
+                  render={({ field }) => (
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="iv_dossier_number">
+                        IV-Dossiernummer *
+                      </Label>
+                      <Input
+                        id="iv_dossier_number"
+                        placeholder="z. B. 320/2025/004391/0"
+                        autoComplete="off"
+                        aria-invalid={Boolean(errors.iv_dossier_number)}
+                        {...field}
+                      />
+                      {errors.iv_dossier_number?.message ? (
+                        <p role="alert" className="text-xs text-destructive">
+                          {errors.iv_dossier_number.message}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                />
+              ) : null}
+            </Section>
 
             {/* Kontakt */}
             <Section title="Kontaktdaten">

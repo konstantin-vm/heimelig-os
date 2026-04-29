@@ -29,10 +29,12 @@ NNNNN_description.sql
 | `00024`        | Story 2.2 — `set_primary_contact_person(uuid)` RPC (atomic Hauptkontakt promote+demote). |
 | `00025`        | Story 2.1 review fixes — drop `pg_temp` from SECURITY DEFINER search_path; admin/office gate on `gen_next_customer_number()`; explicit NULL/name-vs-type guards on create RPC; new `update_customer_with_primary_address()` for atomic edit (applied 2026-04-28). |
 | `00026`        | Story 2.1 review round 2 — re-emit `update_customer_with_primary_address()` with `ON CONFLICT` predicate aligned to `idx_customer_addresses_default_per_type_unique` (`is_default_for_type AND is_active`) — fixes 42P10 on every edit. |
-| `00027`        | Story 2.3 — `customer_insurance` partial-unique alignment + `set_primary_customer_insurance(uuid)` RPC. |
-| `00028`        | Story 2.1.1 — `customers.iv_marker` + `customers.iv_dossier_number` + extended `salutation` enum (`'erbengemeinschaft'`) on `customers` and `contact_persons`. Source: MTG-009 (2026-04-28). |
+| `00027`        | Story 2.3 — `customer_insurance` partial-unique alignment + `set_primary_customer_insurance(uuid)` RPC (applied 2026-04-29). |
+| `00028`        | Story 2.1.1 — `customers.iv_marker` + `customers.iv_dossier_number` + extended `salutation` enum (`'erbengemeinschaft'`) on `customers` and `contact_persons`. Re-emits `create_customer_with_primary_address` + `update_customer_with_primary_address` to thread the two new IV columns through the atomic create + update RPCs. Source: MTG-009 (2026-04-28); applied 2026-04-29. |
 | `00029`        | Story 2.1 review round 3 fixes — `gen_next_customer_number()` background-caller carve-out (auth.uid() IS NULL bypass); `update_customer_with_primary_address()` ROW_COUNT check + case-when guards on UPSERT DO UPDATE (so absent keys don't null existing data) + customer_number-immutable raise (applied 2026-04-29). |
-| `00030+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
+| `00030`        | Story 2.1.1 review fix — replay-safety re-emit of `update_customer_with_primary_address()` (00029 had stripped the iv columns; on numerical replay this restores them) + btrim defense on `iv_dossier_number` for direct API callers (applied 2026-04-29). |
+| `00031`        | Story 2.3 review fixes — `set_primary_customer_insurance` `is_active` guard (rejects soft-deleted targets P0002); defensive cleanup of duplicate primaries before re-asserting `idx_customer_insurance_primary_unique`; back-fill is_primary=false on inactive rows (aligns to soft-delete-clears-is_primary contract) (applied 2026-04-29). |
+| `00032+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
 
 ## Coordination protocol
 

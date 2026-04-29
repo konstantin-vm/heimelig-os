@@ -15,3 +15,17 @@ export {
   CustomerContactsCard,
   type CustomerContactsCardProps,
 } from "./customer-contacts-card";
+export {
+  CustomerInsuranceCard,
+  type CustomerInsuranceCardProps,
+} from "./customer-insurance-card";
+export {
+  InsuranceDialog,
+  type InsuranceDialogMode,
+  type InsuranceDialogProps,
+} from "./insurance-dialog";
+export { InsuranceRow, type InsuranceRowProps } from "./insurance-row";
+export {
+  InsuranceTypeBadge,
+  type InsuranceTypeBadgeProps,
+} from "./insurance-type-badge";

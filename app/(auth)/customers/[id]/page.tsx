@@ -1,7 +1,11 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 
-import { CustomerContactsCard, PageShell } from "@/components/composed";
+import {
+  CustomerContactsCard,
+  CustomerInsuranceCard,
+  PageShell,
+} from "@/components/composed";
 import { createClient } from "@/lib/supabase/server";
 import { logError } from "@/lib/utils/error-log";
 
@@ -64,7 +68,10 @@ async function CustomerProfileBody({ params }: { params: RouteParams }) {
 
   return (
     <PageShell title={fullName} backHref="/customers">
-      <CustomerContactsCard customerId={data.id} customerLabel={fullName} />
+      <div className="flex flex-col gap-6">
+        <CustomerContactsCard customerId={data.id} customerLabel={fullName} />
+        <CustomerInsuranceCard customerId={data.id} customerLabel={fullName} />
+      </div>
     </PageShell>
   );
 }

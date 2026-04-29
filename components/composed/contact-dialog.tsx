@@ -42,6 +42,8 @@ import {
 } from "@/lib/queries/customers";
 import {
   contactPersonFormCreateSchema,
+  salutationValues,
+  SALUTATION_LABELS,
   type ContactPerson,
 } from "@/lib/validations/customer";
 
@@ -61,7 +63,7 @@ export type ContactDialogProps = {
 
 type FormValues = {
   role: ContactRole | null;
-  salutation: "" | "herr" | "frau" | "divers";
+  salutation: "" | (typeof salutationValues)[number];
   title: string;
   first_name: string;
   last_name: string;
@@ -70,12 +72,6 @@ type FormValues = {
   email: string;
   notes: string;
   is_primary_contact: boolean;
-};
-
-const SALUTATION_LABELS: Record<"herr" | "frau" | "divers", string> = {
-  herr: "Herr",
-  frau: "Frau",
-  divers: "Divers",
 };
 
 const EMPTY_DEFAULTS: FormValues = {
@@ -413,9 +409,11 @@ export function ContactDialog({
                         <SelectValue placeholder="–" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="herr">{SALUTATION_LABELS.herr}</SelectItem>
-                        <SelectItem value="frau">{SALUTATION_LABELS.frau}</SelectItem>
-                        <SelectItem value="divers">{SALUTATION_LABELS.divers}</SelectItem>
+                        {salutationValues.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {SALUTATION_LABELS[s]}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

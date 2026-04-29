@@ -513,6 +513,8 @@ export type Database = {
           height_cm: number | null
           id: string
           is_active: boolean
+          iv_dossier_number: string | null
+          iv_marker: boolean
           language: string
           last_name: string | null
           marketing_consent: boolean
@@ -542,6 +544,8 @@ export type Database = {
           height_cm?: number | null
           id?: string
           is_active?: boolean
+          iv_dossier_number?: string | null
+          iv_marker?: boolean
           language?: string
           last_name?: string | null
           marketing_consent?: boolean
@@ -571,6 +575,8 @@ export type Database = {
           height_cm?: number | null
           id?: string
           is_active?: boolean
+          iv_dossier_number?: string | null
+          iv_marker?: boolean
           language?: string
           last_name?: string | null
           marketing_consent?: boolean
@@ -1343,6 +1349,10 @@ export type Database = {
       purge_resolved_error_log: { Args: never; Returns: number }
       set_primary_contact_person: {
         Args: { p_contact_id: string }
+        Returns: undefined
+      }
+      set_primary_customer_insurance: {
+        Args: { p_insurance_id: string }
         Returns: undefined
       }
       update_customer_with_primary_address: {

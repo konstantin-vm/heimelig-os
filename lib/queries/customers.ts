@@ -16,7 +16,11 @@ import type {
   CustomerAddress,
   CustomerAddressCreate,
   CustomerCreate,
+  CustomerInsurance,
+  CustomerInsuranceCreate,
+  CustomerInsuranceUpdate,
 } from "@/lib/validations/customer";
+import type { PartnerInsurer } from "@/lib/validations/partner-insurer";
 
 // ---------------------------------------------------------------------------
 // customerKeys — TanStack Query key factory (per CLAUDE.md "TanStack Query"
@@ -39,6 +43,13 @@ export const customerKeys = {
   detail: (id: string) => [...customerKeys.all, "detail", id] as const,
   contacts: (id: string) =>
     [...customerKeys.all, "detail", id, "contacts"] as const,
+  insurance: (id: string) =>
+    [...customerKeys.all, "detail", id, "insurance"] as const,
+};
+
+export const partnerInsurerKeys = {
+  all: ["partner_insurers"] as const,
+  activeList: () => [...partnerInsurerKeys.all, "active"] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -724,6 +735,442 @@ export function useSoftDeleteContactPerson(
     onSuccess: (data, variables, ...rest) => {
       queryClient.invalidateQueries({
         queryKey: customerKeys.contacts(variables.customerId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.detail(variables.customerId),
+      });
+      return options?.onSuccess?.(data, variables, ...rest);
+    },
+  });
+}
+
+// ===========================================================================
+// Customer insurance (Story 2.3)
+// ---------------------------------------------------------------------------
+// Schema lives in lib/validations/customer.ts (customerInsuranceSchema). RLS
+// (00009_rls_policies.sql:128-148) gates admin/office. Audit trigger (00014
+// :120-122) auto-emits audit_log rows — never call log_activity() manually.
+// Hauptversicherung promote+demote is atomic via the
+// public.set_primary_customer_insurance RPC (migration 00027). The partial
+// unique index `idx_customer_insurance_primary_unique` on
+// (customer_id, insurance_type) WHERE is_primary enforces the "one primary
+// per type per customer" rule at the DB level.
+// ===========================================================================
+
+export type CustomerInsuranceCreatePayload = Omit<
+  CustomerInsuranceCreate,
+  "customer_id"
+>;
+
+export type CustomerInsuranceWithPartner = CustomerInsurance & {
+  partner_insurers: PartnerInsurer | null;
+};
+
+export function useActivePartnerInsurers() {
+  return useQuery({
+    queryKey: partnerInsurerKeys.activeList(),
+    queryFn: async (): Promise<PartnerInsurer[]> => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("partner_insurers")
+        .select("*")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+
+      if (error) {
+        await logError(
+          {
+            errorType: "DB_FUNCTION",
+            severity: "error",
+            source: "partner-insurers",
+            message: error.message,
+            details: { operation: "list", code: error.code ?? null },
+          },
+          supabase,
+        );
+        throw error;
+      }
+      return (data ?? []) as PartnerInsurer[];
+    },
+    staleTime: 1000 * 60 * 60, // 1h — partner-KK list rarely changes
+  });
+}
+
+export function useCustomerInsurances(customerId: string | null) {
+  const enabled = customerId !== null && customerId.length > 0;
+  return useQuery({
+    queryKey: enabled
+      ? customerKeys.insurance(customerId!)
+      : ["customers", "insurance", "__disabled__"],
+    queryFn: enabled
+      ? async (): Promise<CustomerInsuranceWithPartner[]> => {
+          const supabase = createClient();
+          const { data, error } = await supabase
+            .from("customer_insurance")
+            .select("*, partner_insurers(*)")
+            .eq("customer_id", customerId!)
+            .eq("is_active", true)
+            .order("is_primary", { ascending: false })
+            .order("insurance_type", { ascending: true })
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true });
+
+          if (error) {
+            await logError(
+              {
+                errorType: "DB_FUNCTION",
+                severity: "error",
+                source: "customer-insurance",
+                message: error.message,
+                details: {
+                  customer_id: customerId,
+                  operation: "list",
+                  code: error.code ?? null,
+                },
+                entity: "customer_insurance",
+              },
+              supabase,
+            );
+            throw error;
+          }
+          return (data ?? []) as CustomerInsuranceWithPartner[];
+        }
+      : skipToken,
+  });
+}
+
+type CreateInsuranceInput = {
+  customerId: string;
+  values: CustomerInsuranceCreatePayload;
+  setPrimary?: boolean;
+};
+
+export function useCreateCustomerInsurance(
+  options?: UseMutationOptions<CustomerInsurance, Error, CreateInsuranceInput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      customerId,
+      values,
+      setPrimary,
+    }: CreateInsuranceInput) => {
+      const supabase = createClient();
+
+      // Insert with is_primary = false; promote via RPC after insert to
+      // sidestep the partial-unique race when another primary of the same
+      // insurance_type exists.
+      const insertPayload = {
+        ...values,
+        customer_id: customerId,
+        is_primary: false,
+      };
+
+      const { data, error } = await supabase
+        .from("customer_insurance")
+        .insert(insertPayload as never)
+        .select("*")
+        .single();
+
+      if (error || !data) {
+        await logError(
+          {
+            errorType: "DB_FUNCTION",
+            severity: "error",
+            source: "customer-insurance",
+            message: error?.message ?? "insert returned no row",
+            details: {
+              customer_id: customerId,
+              operation: "create",
+              code: error?.code ?? null,
+              constraint:
+                error?.code === "23514"
+                  ? "customer_insurance_insurer_xor"
+                  : null,
+            },
+            entity: "customer_insurance",
+          },
+          supabase,
+        );
+        throw error ?? new Error("customer_insurance insert returned no row");
+      }
+
+      const inserted = data as CustomerInsurance;
+
+      if (setPrimary) {
+        const { error: rpcError } = await supabase.rpc(
+          "set_primary_customer_insurance",
+          { p_insurance_id: inserted.id },
+        );
+        if (rpcError) {
+          await supabase
+            .from("customer_insurance")
+            .delete()
+            .eq("id", inserted.id);
+          await logError(
+            {
+              errorType: "DB_FUNCTION",
+              severity: "error",
+              source: "customer-insurance",
+              message: rpcError.message,
+              details: {
+                customer_id: customerId,
+                insurance_id: inserted.id,
+                operation: "set_primary",
+                code: rpcError.code ?? null,
+                constraint:
+                  rpcError.code === "23505"
+                    ? "idx_customer_insurance_primary_unique"
+                    : null,
+                rolled_back: true,
+              },
+              entity: "customer_insurance",
+              entityId: inserted.id,
+            },
+            supabase,
+          );
+          throw rpcError;
+        }
+        return { ...inserted, is_primary: true };
+      }
+
+      return inserted;
+    },
+    ...options,
+    onSuccess: (insurance, variables, ...rest) => {
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.insurance(variables.customerId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.detail(variables.customerId),
+      });
+      return options?.onSuccess?.(insurance, variables, ...rest);
+    },
+  });
+}
+
+type UpdateInsuranceInput = {
+  customerId: string;
+  insuranceId: string;
+  values: CustomerInsuranceUpdate;
+  setPrimary?: boolean;
+};
+
+export function useUpdateCustomerInsurance(
+  options?: UseMutationOptions<CustomerInsurance, Error, UpdateInsuranceInput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      customerId,
+      insuranceId,
+      values,
+      setPrimary,
+    }: UpdateInsuranceInput) => {
+      const supabase = createClient();
+
+      // Strip is_primary from the patch — promote needs the RPC to
+      // sidestep idx_customer_insurance_primary_unique. Demote (false) is
+      // safe to fold back into the single UPDATE below.
+      const cleanedPatch: Record<string, unknown> = { ...values };
+      delete cleanedPatch.is_primary;
+      delete cleanedPatch.customer_id;
+      if (setPrimary === false) {
+        cleanedPatch.is_primary = false;
+      }
+
+      if (Object.keys(cleanedPatch).length > 0) {
+        const { data: updated, error } = await supabase
+          .from("customer_insurance")
+          .update(cleanedPatch as never)
+          .eq("id", insuranceId)
+          .select("id");
+
+        if (error) {
+          await logError(
+            {
+              errorType: "DB_FUNCTION",
+              severity: "error",
+              source: "customer-insurance",
+              message: error.message,
+              details: {
+                customer_id: customerId,
+                insurance_id: insuranceId,
+                operation: "update",
+                code: error.code ?? null,
+                constraint:
+                  error.code === "23514"
+                    ? "customer_insurance_insurer_xor"
+                    : null,
+              },
+              entity: "customer_insurance",
+              entityId: insuranceId,
+            },
+            supabase,
+          );
+          throw error;
+        }
+
+        if (!updated || updated.length === 0) {
+          const message =
+            "Aktualisierung nicht möglich. Datensatz wurde gelöscht oder ist nicht mehr zugänglich.";
+          await logError(
+            {
+              errorType: "DB_FUNCTION",
+              severity: "warning",
+              source: "customer-insurance",
+              message,
+              details: {
+                customer_id: customerId,
+                insurance_id: insuranceId,
+                operation: "update",
+                code: "PGRST_ZERO_ROWS",
+              },
+              entity: "customer_insurance",
+              entityId: insuranceId,
+            },
+            supabase,
+          );
+          throw new Error(message);
+        }
+      }
+
+      if (setPrimary === true) {
+        const { error: rpcError } = await supabase.rpc(
+          "set_primary_customer_insurance",
+          { p_insurance_id: insuranceId },
+        );
+        if (rpcError) {
+          await logError(
+            {
+              errorType: "DB_FUNCTION",
+              severity: "error",
+              source: "customer-insurance",
+              message: rpcError.message,
+              details: {
+                customer_id: customerId,
+                insurance_id: insuranceId,
+                operation: "set_primary",
+                code: rpcError.code ?? null,
+                constraint:
+                  rpcError.code === "23505"
+                    ? "idx_customer_insurance_primary_unique"
+                    : null,
+              },
+              entity: "customer_insurance",
+              entityId: insuranceId,
+            },
+            supabase,
+          );
+          throw rpcError;
+        }
+      }
+
+      const { data: refreshed, error: refreshError } = await supabase
+        .from("customer_insurance")
+        .select("*")
+        .eq("id", insuranceId)
+        .single();
+      if (refreshError || !refreshed) {
+        throw refreshError ?? new Error("customer_insurance refresh failed");
+      }
+      return refreshed as CustomerInsurance;
+    },
+    ...options,
+    onSuccess: (insurance, variables, ...rest) => {
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.insurance(variables.customerId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.detail(variables.customerId),
+      });
+      return options?.onSuccess?.(insurance, variables, ...rest);
+    },
+  });
+}
+
+type SoftDeleteInsuranceInput = {
+  customerId: string;
+  insuranceId: string;
+  /** Restores the insurance (is_active = true) when true — used by Undo toast. */
+  restore?: boolean;
+};
+
+export function useSoftDeleteCustomerInsurance(
+  options?: UseMutationOptions<void, Error, SoftDeleteInsuranceInput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      customerId,
+      insuranceId,
+      restore,
+    }: SoftDeleteInsuranceInput) => {
+      const supabase = createClient();
+      // Soft-delete: also clear is_primary so the (customer_id, insurance_type)
+      // partial-unique slot is released — otherwise a soft-deleted primary
+      // permanently blocks any future primary of the same type.
+      // Restore: leave is_primary as-is (false after soft-delete) — the user
+      // can re-toggle primary explicitly if they want it.
+      const patch = restore
+        ? { is_active: true }
+        : { is_active: false, is_primary: false };
+      const { data: updated, error } = await supabase
+        .from("customer_insurance")
+        .update(patch as never)
+        .eq("id", insuranceId)
+        .select("id");
+
+      if (error) {
+        await logError(
+          {
+            errorType: "DB_FUNCTION",
+            severity: "error",
+            source: "customer-insurance",
+            message: error.message,
+            details: {
+              customer_id: customerId,
+              insurance_id: insuranceId,
+              operation: restore ? "restore" : "soft_delete",
+              code: error.code ?? null,
+            },
+            entity: "customer_insurance",
+            entityId: insuranceId,
+          },
+          supabase,
+        );
+        throw error;
+      }
+
+      // RLS-deny silently returns success with zero rows — surface as failure.
+      if (!updated || updated.length === 0) {
+        const message = restore
+          ? "Wiederherstellung nicht möglich. Datensatz wurde gelöscht oder ist nicht mehr zugänglich."
+          : "Löschen nicht möglich. Datensatz wurde bereits gelöscht oder ist nicht mehr zugänglich.";
+        await logError(
+          {
+            errorType: "DB_FUNCTION",
+            severity: "warning",
+            source: "customer-insurance",
+            message,
+            details: {
+              customer_id: customerId,
+              insurance_id: insuranceId,
+              operation: restore ? "restore" : "soft_delete",
+              code: "PGRST_ZERO_ROWS",
+            },
+            entity: "customer_insurance",
+            entityId: insuranceId,
+          },
+          supabase,
+        );
+        throw new Error(message);
+      }
+    },
+    ...options,
+    onSuccess: (data, variables, ...rest) => {
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.insurance(variables.customerId),
       });
       queryClient.invalidateQueries({
         queryKey: customerKeys.detail(variables.customerId),

@@ -27,6 +27,10 @@ export type CustomerFormValues = {
   acquisition_channel: (typeof acquisitionChannelValues)[number] | "";
   notes: string;
 
+  // Story 2.1.1 — IV (Invalidenversicherung) fields.
+  iv_marker: boolean;
+  iv_dossier_number: string;
+
   // primary address
   street: string;
   street_number: string;

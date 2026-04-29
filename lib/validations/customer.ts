@@ -98,6 +98,10 @@ export const customerSchema = z.object({
   company_name: z.string().nullable(),
   addressee_line: z.string().nullable(),
   email: emailSchema.nullable(),
+  // P18 (Round 3) — DB column is nullable (institutions, legacy imports). The
+  // form-level "Telefon required" rule from AC1 lives in `customer-edit-form`
+  // via RHF `rules: { required }` and does not belong in the row schema. AC4
+  // is amended accordingly in the story spec.
   phone: phoneSchema.nullable(),
   mobile: phoneSchema.nullable(),
   date_of_birth: isoDateSchema.nullable(),
@@ -130,6 +134,9 @@ export const customerCreateSchema = customerSchema
     updated_by: true,
   })
   .extend({
+    // customer_number defaults to the DB-side generator
+    // (`gen_next_customer_number()`); the form must not send a value.
+    customer_number: z.string().min(1).optional(),
     customer_type: customerTypeSchema.default("private"),
     language: z.enum(languageValues).default("de"),
     marketing_consent: z.boolean().default(false),
@@ -232,6 +239,17 @@ export const customerAddressCreateSchema = customerAddressSchema
 
 export const customerAddressUpdateSchema =
   customerAddressCreateSchema.partial();
+
+// Form-side variant for the create+edit modal — `customer_id` is supplied by
+// the RPC (create) or the mutation (update), so the form never owns it.
+// Avoids the placeholder-UUID hack in customer-edit-form.tsx.
+export const customerAddressUserInputSchema = customerAddressCreateSchema.omit({
+  customer_id: true,
+});
+
+export type CustomerAddressUserInput = z.infer<
+  typeof customerAddressUserInputSchema
+>;
 
 // -------------------- customer_insurance ---------
 
@@ -339,6 +357,33 @@ export const contactPersonCreateSchema = contactPersonSchema
   });
 
 export const contactPersonUpdateSchema = contactPersonCreateSchema.partial();
+
+// Form-level variant — Telefon required (UX), DB column stays nullable so legacy
+// Blue-Office migration data without phone numbers remains editable.
+// See Story 2.2 AC1 + AC6 + decision #3 (2026-04-28).
+export const contactPersonFormCreateSchema = contactPersonCreateSchema.superRefine(
+  (value, ctx) => {
+    if (value.phone === null || value.phone === undefined || value.phone === "") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["phone"],
+        message: "Telefon ist erforderlich",
+      });
+    }
+  },
+);
+
+export const contactPersonFormUpdateSchema = contactPersonUpdateSchema.superRefine(
+  (value, ctx) => {
+    if (value.phone !== undefined && (value.phone === null || value.phone === "")) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["phone"],
+        message: "Telefon ist erforderlich",
+      });
+    }
+  },
+);
 
 // -------------------- Types ----------------------
 

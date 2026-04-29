@@ -534,7 +534,7 @@ export type Database = {
           company_name?: string | null
           created_at?: string
           created_by?: string | null
-          customer_number: string
+          customer_number?: string
           customer_type?: string
           date_of_birth?: string | null
           email?: string | null
@@ -1306,7 +1306,12 @@ export type Database = {
       }
     }
     Functions: {
+      create_customer_with_primary_address: {
+        Args: { p_address: Json; p_customer: Json }
+        Returns: string
+      }
       current_app_role: { Args: never; Returns: string }
+      gen_next_customer_number: { Args: never; Returns: string }
       is_admin: { Args: never; Returns: boolean }
       is_office: { Args: never; Returns: boolean }
       is_technician: { Args: never; Returns: boolean }
@@ -1336,6 +1341,14 @@ export type Database = {
         Returns: string
       }
       purge_resolved_error_log: { Args: never; Returns: number }
+      set_primary_contact_person: {
+        Args: { p_contact_id: string }
+        Returns: undefined
+      }
+      update_customer_with_primary_address: {
+        Args: { p_address: Json; p_customer: Json; p_id: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

@@ -25,7 +25,14 @@ NNNNN_description.sql
 | `00017`        | Story 1.5 review round 3 fixes — dual-cascade gap on error_log + decomposed guard (applied 2026-04-27). |
 | `00018–00020`  | Story 1.6 — storage bucket policies.                |
 | `00021–00022`  | Story 1.7 — bexio credentials + OAuth2 plumbing.    |
-| `00023+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
+| `00023`        | Story 2.1 — `customer_number_seq` + `gen_next_customer_number()` + `create_customer_with_primary_address()` (applied 2026-04-28). |
+| `00024`        | Story 2.2 — `set_primary_contact_person(uuid)` RPC (atomic Hauptkontakt promote+demote). |
+| `00025`        | Story 2.1 review fixes — drop `pg_temp` from SECURITY DEFINER search_path; admin/office gate on `gen_next_customer_number()`; explicit NULL/name-vs-type guards on create RPC; new `update_customer_with_primary_address()` for atomic edit (applied 2026-04-28). |
+| `00026`        | Story 2.1 review round 2 — re-emit `update_customer_with_primary_address()` with `ON CONFLICT` predicate aligned to `idx_customer_addresses_default_per_type_unique` (`is_default_for_type AND is_active`) — fixes 42P10 on every edit. |
+| `00027`        | Story 2.3 — `customer_insurance` partial-unique alignment + `set_primary_customer_insurance(uuid)` RPC. |
+| `00028`        | Story 2.1.1 — `customers.iv_marker` + `customers.iv_dossier_number` + extended `salutation` enum (`'erbengemeinschaft'`) on `customers` and `contact_persons`. Source: MTG-009 (2026-04-28). |
+| `00029`        | Story 2.1 review round 3 fixes — `gen_next_customer_number()` background-caller carve-out (auth.uid() IS NULL bypass); `update_customer_with_primary_address()` ROW_COUNT check + case-when guards on UPSERT DO UPDATE (so absent keys don't null existing data) + customer_number-immutable raise (applied 2026-04-29). |
+| `00030+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
 
 ## Coordination protocol
 

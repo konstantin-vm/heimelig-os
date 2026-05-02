@@ -300,6 +300,67 @@ export type CustomerAddressUserInput = z.infer<
   typeof customerAddressUserInputSchema
 >;
 
+// Form-level schema for the AddressDialog (Story 2.4 — non-primary
+// addresses only: 'delivery' / 'billing' / 'other'). Drives both add + edit
+// modes via a single FormValues shape, mirroring the
+// `customerInsuranceDialogSchema` pattern from Story 2.3 (review-1).
+//
+// Refinements:
+//   (a) `address_type !== 'primary'` — the dialog never creates primary
+//       addresses (Story 2.1 owns those via the atomic create/edit RPCs).
+//       Defense-in-depth: the type picker excludes 'primary'.
+//   (b) `recipient_name` is optional but, when present, must be at least one
+//       non-whitespace character — empty strings are coerced to null at
+//       submit time, but a string of only spaces should fail validation.
+//   (c) `street`, `zip`, `city` required — already enforced by the row
+//       schema; mirrored here so RHF surfaces the inline errors.
+//   (d) Country / floor / has_elevator enums — inherited from the row schema.
+//
+// The dialog's submit handler trims and null-coerces empty `recipient_name`,
+// `street_number`, `floor`, `has_elevator`, `access_notes` BEFORE calling
+// the create / update mutation; the row schema accepts those nulls.
+export const customerAddressDialogSchema = z
+  .object({
+    address_type: addressTypeSchema,
+    recipient_name: z.string(),
+    street: z.string().trim().min(1, { error: "Strasse ist erforderlich" }),
+    street_number: z.string(),
+    zip: z.string().trim().min(1, { error: "PLZ ist erforderlich" }),
+    city: z.string().trim().min(1, { error: "Ort ist erforderlich" }),
+    country: z.enum(countryValues),
+    floor: z.string(),
+    has_elevator: z.string(),
+    access_notes: z.string(),
+    lat: z.number().nullable(),
+    lng: z.number().nullable(),
+    geocoded_at: z.string().nullable(),
+    is_default_for_type: z.boolean(),
+    bypass_geocoding: z.boolean(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.address_type === "primary") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["address_type"],
+        message:
+          "Hauptadresse wird über „Kunde bearbeiten“ verwaltet, nicht über diesen Dialog.",
+      });
+    }
+    // recipient_name optional, but if non-null/non-empty must contain at
+    // least one non-whitespace character.
+    if (value.recipient_name !== "" && value.recipient_name.trim() === "") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recipient_name"],
+        message: "Empfängername darf nicht nur aus Leerzeichen bestehen.",
+      });
+    }
+  });
+
+export type CustomerAddressDialogValues = z.infer<
+  typeof customerAddressDialogSchema
+>;
+
 // -------------------- customer_insurance ---------
 
 export const customerInsuranceSchema = z

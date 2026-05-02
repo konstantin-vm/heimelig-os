@@ -15,6 +15,7 @@ import type {
   Customer,
   CustomerAddress,
   CustomerAddressCreate,
+  CustomerAddressUpdate,
   CustomerCreate,
   CustomerInsurance,
   CustomerInsuranceCreate,
@@ -45,6 +46,8 @@ export const customerKeys = {
     [...customerKeys.all, "detail", id, "contacts"] as const,
   insurance: (id: string) =>
     [...customerKeys.all, "detail", id, "insurance"] as const,
+  addresses: (id: string) =>
+    [...customerKeys.all, "detail", id, "addresses"] as const,
 };
 
 export const partnerInsurerKeys = {
@@ -1171,6 +1174,512 @@ export function useSoftDeleteCustomerInsurance(
     onSuccess: (data, variables, ...rest) => {
       queryClient.invalidateQueries({
         queryKey: customerKeys.insurance(variables.customerId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.detail(variables.customerId),
+      });
+      return options?.onSuccess?.(data, variables, ...rest);
+    },
+  });
+}
+
+// ===========================================================================
+// Customer addresses (Story 2.4)
+// ---------------------------------------------------------------------------
+// Schema lives in lib/validations/customer.ts (customerAddressSchema). RLS
+// (00009_rls_policies.sql:108-127) gates admin/office (admin: full CRUD;
+// office: SELECT/INSERT/UPDATE — no DELETE — soft-delete via is_active=false).
+// Audit trigger (00014:121) auto-emits audit_log rows — never call
+// log_activity() manually for this table.
+// Hauptadresse-pro-Typ promote+demote is atomic via the
+// public.set_default_customer_address RPC (migration 00034). The partial
+// unique index `idx_customer_addresses_default_per_type_unique` on
+// (customer_id, address_type) WHERE is_default_for_type enforces the
+// "one default per type per customer" rule at the DB level.
+//
+// Primary addresses (address_type='primary') are owned exclusively by Story
+// 2.1's `create_customer_with_primary_address` /
+// `update_customer_with_primary_address` RPCs — never INSERT, UPDATE or
+// soft-delete a primary row through the hooks below. The
+// set_default_customer_address RPC also rejects address_type='primary'
+// targets.
+// ===========================================================================
+
+export type CustomerAddressCreatePayload = Omit<
+  CustomerAddressCreate,
+  "customer_id"
+>;
+
+// Pull the actual constraint name out of a PostgrestError. Supabase surfaces
+// it inside `message` and/or `details` (e.g. `duplicate key value violates
+// unique constraint "idx_customer_addresses_default_per_type_unique"`).
+// Falls back to `unknown_unique` so 23505 from a non-target constraint (PK,
+// FK, etc.) is not mis-attributed to the partial-unique index (review fix).
+function extractConstraintName(
+  err: { message?: string | null; details?: string | null } | null | undefined,
+): string | null {
+  if (!err) return null;
+  const candidates = [err.message, err.details];
+  for (const source of candidates) {
+    if (typeof source !== "string") continue;
+    const match = source.match(/constraint "([^"]+)"/);
+    if (match && match[1]) return match[1];
+  }
+  return "unknown_unique";
+}
+
+const ADDRESS_TYPE_ORDER: Record<string, number> = {
+  primary: 0,
+  delivery: 1,
+  billing: 2,
+  other: 3,
+};
+
+function sortAddressesForDisplay<
+  T extends Pick<CustomerAddress, "address_type" | "is_default_for_type" | "created_at" | "id">,
+>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const ta = ADDRESS_TYPE_ORDER[a.address_type] ?? 99;
+    const tb = ADDRESS_TYPE_ORDER[b.address_type] ?? 99;
+    if (ta !== tb) return ta - tb;
+    if (a.is_default_for_type !== b.is_default_for_type) {
+      return a.is_default_for_type ? -1 : 1;
+    }
+    if (a.created_at !== b.created_at) {
+      return a.created_at < b.created_at ? -1 : 1;
+    }
+    return a.id < b.id ? -1 : 1;
+  });
+}
+
+export function useCustomerAddresses(customerId: string | null) {
+  const enabled = customerId !== null && customerId.length > 0;
+  return useQuery({
+    queryKey: enabled
+      ? customerKeys.addresses(customerId)
+      : ["customers", "addresses", "__disabled__"],
+    queryFn: enabled
+      ? async (): Promise<CustomerAddress[]> => {
+          const supabase = createClient();
+          const { data, error } = await supabase
+            .from("customer_addresses")
+            .select("*")
+            .eq("customer_id", customerId)
+            .eq("is_active", true)
+            .order("address_type", { ascending: true })
+            .order("is_default_for_type", { ascending: false })
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true });
+
+          if (error) {
+            await logError(
+              {
+                errorType: "DB_FUNCTION",
+                severity: "error",
+                source: "customer-address",
+                message: error.message,
+                details: {
+                  customer_id: customerId,
+                  operation: "list",
+                  code: error.code ?? null,
+                },
+                entity: "customer_addresses",
+              },
+              supabase,
+            );
+            throw error;
+          }
+          // Postgres orders 'billing' < 'delivery' < 'other' < 'primary'
+          // alphabetically — but the UI wants primary first. Re-sort
+          // client-side using the explicit ADDRESS_TYPE_ORDER. The DB
+          // ordering is kept as a defensive secondary sort for stability.
+          return sortAddressesForDisplay(
+            (data ?? []) as CustomerAddress[],
+          );
+        }
+      : skipToken,
+  });
+}
+
+type CreateAddressInput = {
+  customerId: string;
+  values: CustomerAddressCreatePayload;
+  /** When true, promote this address to default-for-type after insert. */
+  setDefault?: boolean;
+};
+
+export function useCreateCustomerAddress(
+  options?: UseMutationOptions<CustomerAddress, Error, CreateAddressInput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      customerId,
+      values,
+      setDefault,
+    }: CreateAddressInput) => {
+      const supabase = createClient();
+
+      // Insert with is_default_for_type = false; promote via RPC after to
+      // sidestep the partial-unique race when another default of the same
+      // address_type already exists. Mirrors Story 2.3's create flow.
+      // Whitelist every column explicitly so a stale form (or future
+      // regression) cannot smuggle id, created_*, updated_*, or
+      // is_active=false through the create path (review fix).
+      const insertPayload = {
+        customer_id: customerId,
+        address_type: values.address_type,
+        recipient_name: values.recipient_name,
+        street: values.street,
+        street_number: values.street_number,
+        zip: values.zip,
+        city: values.city,
+        country: values.country,
+        floor: values.floor,
+        has_elevator: values.has_elevator,
+        access_notes: values.access_notes,
+        lat: values.lat,
+        lng: values.lng,
+        geocoded_at: values.geocoded_at,
+        is_active: true,
+        is_default_for_type: false,
+      };
+
+      const { data, error } = await supabase
+        .from("customer_addresses")
+        .insert(insertPayload as never)
+        .select("*")
+        .single();
+
+      if (error || !data) {
+        await logError(
+          {
+            errorType: "DB_FUNCTION",
+            severity: "error",
+            source: "customer-address",
+            message: error?.message ?? "insert returned no row",
+            details: {
+              customer_id: customerId,
+              address_type: values.address_type,
+              operation: "create",
+              code: error?.code ?? null,
+              constraint:
+                error?.code === "23505"
+                  ? extractConstraintName(error)
+                  : null,
+            },
+            entity: "customer_addresses",
+          },
+          supabase,
+        );
+        throw error ?? new Error("customer_addresses insert returned no row");
+      }
+
+      const inserted = data as CustomerAddress;
+
+      if (setDefault) {
+        const { error: rpcError } = await supabase.rpc(
+          "set_default_customer_address",
+          { p_address_id: inserted.id },
+        );
+        if (rpcError) {
+          // Compensating soft-delete — the row was inserted as non-default;
+          // the user requested default. Office RLS (00009:108-127) does NOT
+          // grant DELETE — a hard `.delete()` here silently returns 0 rows
+          // for office and leaves an orphan non-default row while we'd log
+          // `rolled_back: true` (review fix). UPDATE is allowed for office,
+          // and clearing both flags releases the partial-unique slot.
+          const { data: rolled, error: rollbackError } = await supabase
+            .from("customer_addresses")
+            .update({ is_active: false, is_default_for_type: false } as never)
+            .eq("id", inserted.id)
+            .select("id");
+          const wasRolledBack =
+            !rollbackError &&
+            Array.isArray(rolled) &&
+            rolled.length > 0;
+          await logError(
+            {
+              errorType: "DB_FUNCTION",
+              severity: "error",
+              source: "customer-address",
+              message: rpcError.message,
+              details: {
+                customer_id: customerId,
+                address_id: inserted.id,
+                address_type: values.address_type,
+                operation: "set_default",
+                code: rpcError.code ?? null,
+                constraint:
+                  rpcError.code === "23505"
+                    ? extractConstraintName(rpcError)
+                    : null,
+                rolled_back: wasRolledBack,
+                rollback_code: rollbackError?.code ?? null,
+              },
+              entity: "customer_addresses",
+              entityId: inserted.id,
+            },
+            supabase,
+          );
+          throw rpcError;
+        }
+        return { ...inserted, is_default_for_type: true };
+      }
+
+      return inserted;
+    },
+    ...options,
+    onSuccess: (address, variables, ...rest) => {
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.addresses(variables.customerId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.detail(variables.customerId),
+      });
+      return options?.onSuccess?.(address, variables, ...rest);
+    },
+  });
+}
+
+type UpdateAddressInput = {
+  customerId: string;
+  addressId: string;
+  values: CustomerAddressUpdate;
+  /** Whether to promote the row to default-for-type via RPC after the patch. */
+  setDefault?: boolean;
+};
+
+export function useUpdateCustomerAddress(
+  options?: UseMutationOptions<CustomerAddress, Error, UpdateAddressInput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      customerId,
+      addressId,
+      values,
+      setDefault,
+    }: UpdateAddressInput) => {
+      const supabase = createClient();
+
+      // Strip is_default_for_type from the patch — promote needs the RPC to
+      // sidestep idx_customer_addresses_default_per_type_unique. Demote
+      // (false) is safe to fold back into the single UPDATE below.
+      // Also strip every non-mutable column so a stale form (or future
+      // regression) cannot smuggle is_active=false through the update path
+      // and bypass the dedicated soft-delete hook + its
+      // is_default_for_type=false cleanup (review fix).
+      const cleanedPatch: Record<string, unknown> = { ...values };
+      delete cleanedPatch.is_default_for_type;
+      delete cleanedPatch.customer_id;
+      delete cleanedPatch.address_type; // address_type is read-only post-create
+      delete cleanedPatch.is_active; // soft-delete owns this column
+      delete cleanedPatch.id;
+      delete cleanedPatch.created_at;
+      delete cleanedPatch.created_by;
+      delete cleanedPatch.updated_at;
+      delete cleanedPatch.updated_by;
+      if (setDefault === false) {
+        cleanedPatch.is_default_for_type = false;
+      }
+
+      if (Object.keys(cleanedPatch).length > 0) {
+        const { data: updated, error } = await supabase
+          .from("customer_addresses")
+          .update(cleanedPatch as never)
+          .eq("id", addressId)
+          .select("id");
+
+        if (error) {
+          await logError(
+            {
+              errorType: "DB_FUNCTION",
+              severity: "error",
+              source: "customer-address",
+              message: error.message,
+              details: {
+                customer_id: customerId,
+                address_id: addressId,
+                operation: "update",
+                code: error.code ?? null,
+                constraint:
+                  error.code === "23514"
+                    ? "customer_addresses_check"
+                    : null,
+              },
+              entity: "customer_addresses",
+              entityId: addressId,
+            },
+            supabase,
+          );
+          throw error;
+        }
+
+        if (!updated || updated.length === 0) {
+          // 0-row update means RLS denied or the row no longer exists.
+          // Story 2.2 review pattern.
+          const message =
+            "Aktualisierung nicht möglich. Datensatz wurde gelöscht oder ist nicht mehr zugänglich.";
+          await logError(
+            {
+              errorType: "DB_FUNCTION",
+              severity: "warning",
+              source: "customer-address",
+              message,
+              details: {
+                customer_id: customerId,
+                address_id: addressId,
+                operation: "update",
+                code: "PGRST_ZERO_ROWS",
+              },
+              entity: "customer_addresses",
+              entityId: addressId,
+            },
+            supabase,
+          );
+          throw new Error(message);
+        }
+      }
+
+      if (setDefault === true) {
+        const { error: rpcError } = await supabase.rpc(
+          "set_default_customer_address",
+          { p_address_id: addressId },
+        );
+        if (rpcError) {
+          await logError(
+            {
+              errorType: "DB_FUNCTION",
+              severity: "error",
+              source: "customer-address",
+              message: rpcError.message,
+              details: {
+                customer_id: customerId,
+                address_id: addressId,
+                operation: "set_default",
+                code: rpcError.code ?? null,
+                constraint:
+                  rpcError.code === "23505"
+                    ? extractConstraintName(rpcError)
+                    : null,
+              },
+              entity: "customer_addresses",
+              entityId: addressId,
+            },
+            supabase,
+          );
+          throw rpcError;
+        }
+      }
+
+      const { data: refreshed, error: refreshError } = await supabase
+        .from("customer_addresses")
+        .select("*")
+        .eq("id", addressId)
+        .single();
+      if (refreshError || !refreshed) {
+        throw refreshError ?? new Error("customer_addresses refresh failed");
+      }
+      return refreshed as CustomerAddress;
+    },
+    ...options,
+    onSuccess: (address, variables, ...rest) => {
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.addresses(variables.customerId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.detail(variables.customerId),
+      });
+      return options?.onSuccess?.(address, variables, ...rest);
+    },
+  });
+}
+
+type SoftDeleteAddressInput = {
+  customerId: string;
+  addressId: string;
+  /** Restores the address (is_active = true) when true — used by Undo toast. */
+  restore?: boolean;
+};
+
+export function useSoftDeleteCustomerAddress(
+  options?: UseMutationOptions<void, Error, SoftDeleteAddressInput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      customerId,
+      addressId,
+      restore,
+    }: SoftDeleteAddressInput) => {
+      const supabase = createClient();
+      // Soft-delete: also clear is_default_for_type so the
+      // (customer_id, address_type) partial-unique slot is released —
+      // otherwise a soft-deleted default permanently blocks any future
+      // default of the same type. Story 2.3 review trap, applied
+      // preemptively.
+      // Restore: leave is_default_for_type as-is (false after soft-delete) —
+      // the user can re-toggle Hauptadresse explicitly if they want it.
+      const patch = restore
+        ? { is_active: true }
+        : { is_active: false, is_default_for_type: false };
+      const { data: updated, error } = await supabase
+        .from("customer_addresses")
+        .update(patch as never)
+        .eq("id", addressId)
+        .select("id");
+
+      if (error) {
+        await logError(
+          {
+            errorType: "DB_FUNCTION",
+            severity: "error",
+            source: "customer-address",
+            message: error.message,
+            details: {
+              customer_id: customerId,
+              address_id: addressId,
+              operation: restore ? "restore" : "soft_delete",
+              code: error.code ?? null,
+            },
+            entity: "customer_addresses",
+            entityId: addressId,
+          },
+          supabase,
+        );
+        throw error;
+      }
+
+      // RLS-deny silently returns success with zero rows — surface as failure.
+      if (!updated || updated.length === 0) {
+        const message = restore
+          ? "Wiederherstellung nicht möglich. Datensatz wurde gelöscht oder ist nicht mehr zugänglich."
+          : "Löschen nicht möglich. Datensatz wurde bereits gelöscht oder ist nicht mehr zugänglich.";
+        await logError(
+          {
+            errorType: "DB_FUNCTION",
+            severity: "warning",
+            source: "customer-address",
+            message,
+            details: {
+              customer_id: customerId,
+              address_id: addressId,
+              operation: restore ? "restore" : "soft_delete",
+              code: "PGRST_ZERO_ROWS",
+            },
+            entity: "customer_addresses",
+            entityId: addressId,
+          },
+          supabase,
+        );
+        throw new Error(message);
+      }
+    },
+    ...options,
+    onSuccess: (data, variables, ...rest) => {
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.addresses(variables.customerId),
       });
       queryClient.invalidateQueries({
         queryKey: customerKeys.detail(variables.customerId),

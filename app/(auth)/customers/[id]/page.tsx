@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 
 import {
+  CustomerAddressesCard,
   CustomerContactsCard,
   CustomerInsuranceCard,
   PageShell,
@@ -71,6 +72,7 @@ async function CustomerProfileBody({ params }: { params: RouteParams }) {
       <div className="flex flex-col gap-6">
         <CustomerContactsCard customerId={data.id} customerLabel={fullName} />
         <CustomerInsuranceCard customerId={data.id} customerLabel={fullName} />
+        <CustomerAddressesCard customerId={data.id} customerLabel={fullName} />
       </div>
     </PageShell>
   );

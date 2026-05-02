@@ -4,6 +4,25 @@ export { CountBadge, type CountBadgeProps } from "./count-badge";
 export { CustomerTable, type CustomerTableProps } from "./customer-table";
 export { CustomerEditForm, type CustomerEditFormProps } from "./customer-edit-form";
 export { CustomerAddressFields } from "./customer-address-fields";
+export { AddressFormFields } from "./address-form-fields";
+export {
+  AddressTypeBadge,
+  type AddressTypeBadgeProps,
+} from "./address-type-badge";
+export {
+  AddressTypePicker,
+  type AddressTypePickerProps,
+} from "./address-type-picker";
+export { AddressRow, type AddressRowProps } from "./address-row";
+export {
+  AddressDialog,
+  type AddressDialogMode,
+  type AddressDialogProps,
+} from "./address-dialog";
+export {
+  CustomerAddressesCard,
+  type CustomerAddressesCardProps,
+} from "./customer-addresses-card";
 export { RowActions, type RowActionsProps } from "./row-actions";
 export { ConfirmDialog, type ConfirmDialogProps } from "./confirm-dialog";
 export { ContactAvatar, type ContactAvatarProps } from "./contact-avatar";

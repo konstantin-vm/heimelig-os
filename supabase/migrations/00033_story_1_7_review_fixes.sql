@@ -452,7 +452,15 @@ comment on function public.bexio_complete_oauth(text, text, text, text, timestam
 -- 8 (cont). bexio_get_active_credential_decrypted — also return created_at
 -- so the Edge Function bexio-client can anchor proactive refresh on creation
 -- time when last_refreshed_at is NULL.
+--
+-- The prior function (00021) returned 10 columns; this version adds an 11th
+-- (`created_at`). Postgres rejects `create or replace function` when the
+-- `returns table(...)` shape changes (SQLSTATE 42P13: cannot change return
+-- type of existing function). Drop-then-create is the documented escape
+-- hatch. Idempotent on replay because of `if exists`.
 -- =============================================================================
+
+drop function if exists public.bexio_get_active_credential_decrypted();
 
 create or replace function public.bexio_get_active_credential_decrypted()
 returns table (

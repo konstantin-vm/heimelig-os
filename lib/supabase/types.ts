@@ -286,6 +286,7 @@ export type Database = {
       bexio_oauth_states: {
         Row: {
           created_at: string
+          created_by: string | null
           environment: string
           expires_at: string
           state: string
@@ -293,6 +294,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          created_by?: string | null
           environment: string
           expires_at?: string
           state: string
@@ -300,12 +302,28 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          created_by?: string | null
           environment?: string
           expires_at?: string
           state?: string
           used_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "bexio_oauth_states_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bexio_oauth_states_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       contact_persons: {
         Row: {
@@ -1511,6 +1529,7 @@ export type Database = {
           p_bexio_company_id?: string
           p_environment: string
           p_expires_at: string
+          p_initiated_by?: string
           p_refresh_token_encrypted: string
           p_scope: string
           p_state: string
@@ -1538,6 +1557,10 @@ export type Database = {
           updated_by: string
         }[]
       }
+      bexio_credentials_status_label: {
+        Args: { p_expires_at: string; p_is_active: boolean }
+        Returns: string
+      }
       bexio_decrypt_token: { Args: { p_ciphertext: string }; Returns: string }
       bexio_encrypt_token: { Args: { p_plaintext: string }; Returns: string }
       bexio_get_active_credential_decrypted: {
@@ -1545,6 +1568,7 @@ export type Database = {
         Returns: {
           access_token: string
           bexio_company_id: string
+          created_at: string
           environment: string
           expires_at: string
           id: string
@@ -1604,6 +1628,10 @@ export type Database = {
         Returns: string
       }
       purge_resolved_error_log: { Args: never; Returns: number }
+      set_default_customer_address: {
+        Args: { p_address_id: string }
+        Returns: undefined
+      }
       set_primary_contact_person: {
         Args: { p_contact_id: string }
         Returns: undefined

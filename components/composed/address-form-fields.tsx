@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Loader2, MapPin } from "lucide-react";
-import { Controller, type Control, type UseFormGetValues, type UseFormSetValue } from "react-hook-form";
+import {
+  Controller,
+  useWatch,
+  type Control,
+  type UseFormGetValues,
+  type UseFormSetValue,
+} from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +75,12 @@ const ELEVATOR_LABELS: Record<(typeof elevatorValues)[number], string> = {
   unbekannt: "Unbekannt",
 };
 
+// shadcn Select cannot accept value="" — use a sentinel for the
+// "no value selected" option and map it back to "" in the form state.
+// Round-2 review: previously a user could not clear floor / has_elevator
+// after the first selection because there was no clear option.
+const NONE_SENTINEL = "__none__";
+
 export function AddressFormFields({
   control,
   getValues,
@@ -96,6 +108,53 @@ export function AddressFormFields({
       abortRef.current?.abort();
     };
   }, []);
+
+  // Round-2 review: when any address field (street / street_number / zip /
+  // city / country) changes after the form has been hydrated, clear the
+  // stored geocode so the user is forced to re-validate. Without this, a
+  // user could change "Bahnhofstrasse 1" → "Bahnhofstrasse 99" and Save
+  // with the OLD coordinates, persisting a row whose displayed address
+  // doesn't match its lat/lng.
+  const watchedAddress = useWatch({
+    control,
+    name: ["street", "street_number", "zip", "city", "country"],
+  });
+  const prevAddressRef = useRef<readonly [string, string, string, string, string] | null>(null);
+  useEffect(() => {
+    const next = [
+      watchedAddress[0] ?? "",
+      watchedAddress[1] ?? "",
+      watchedAddress[2] ?? "",
+      watchedAddress[3] ?? "",
+      watchedAddress[4] ?? "",
+    ] as const;
+    if (prevAddressRef.current === null) {
+      prevAddressRef.current = next;
+      return;
+    }
+    const prev = prevAddressRef.current;
+    const changed =
+      prev[0] !== next[0] ||
+      prev[1] !== next[1] ||
+      prev[2] !== next[2] ||
+      prev[3] !== next[3] ||
+      prev[4] !== next[4];
+    if (!changed) return;
+    prevAddressRef.current = next;
+    const v = getValues();
+    if (v.lat !== null || v.lng !== null || v.geocoded_at !== null) {
+      setValue("lat", null, { shouldDirty: true });
+      setValue("lng", null, { shouldDirty: true });
+      setValue("geocoded_at", null, { shouldDirty: true });
+      setValue("bypass_geocoding", false, { shouldDirty: true });
+      // Defer the local-state reset to a microtask so the React Compiler's
+      // `set-state-in-effect` rule doesn't fire — synchronously calling
+      // setGeoState inside an effect that already ran setValue() (which
+      // schedules its own renders via RHF subscriptions) is the cascading
+      // pattern that rule warns about.
+      queueMicrotask(() => setGeoState({ kind: "idle" }));
+    }
+  }, [watchedAddress, getValues, setValue]);
 
   async function runGeocode() {
     const v = getValues();
@@ -135,9 +194,14 @@ export function AddressFormFields({
       setValue("bypass_geocoding", false);
       setGeoState({ kind: "success", result });
     } else {
-      setValue("lat", null, { shouldDirty: true });
-      setValue("lng", null, { shouldDirty: true });
-      setValue("geocoded_at", null, { shouldDirty: true });
+      // Round-2 review: previously wiped lat/lng/geocoded_at unconditionally
+      // on geocode failure — a transient ZERO_RESULTS / OVER_QUERY_LIMIT on
+      // an edit-flow re-geocode silently destroyed pre-existing valid
+      // coordinates. Now: preserve whatever's in form state. The address-
+      // field-change effect below already clears coords when street / zip /
+      // city / country change, so by the time the user re-runs the geocode
+      // after edits, lat/lng are already null. Editing without address-field
+      // changes → coords stay valid through transient API failures.
       const localised = geocodeStatusMessage(result.status);
       setGeoState({
         kind: "error",
@@ -300,13 +364,14 @@ export function AddressFormFields({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor={floorId}>Stockwerk</Label>
               <Select
-                value={field.value ?? ""}
-                onValueChange={(v) => field.onChange(v || "")}
+                value={field.value === "" ? NONE_SENTINEL : (field.value ?? NONE_SENTINEL)}
+                onValueChange={(v) => field.onChange(v === NONE_SENTINEL ? "" : v)}
               >
                 <SelectTrigger id={floorId}>
                   <SelectValue placeholder="–" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={NONE_SENTINEL}>–</SelectItem>
                   {floorValues.map((f) => (
                     <SelectItem key={f} value={f}>
                       {FLOOR_LABELS[f]}
@@ -325,13 +390,14 @@ export function AddressFormFields({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor={elevatorId}>Lift</Label>
               <Select
-                value={field.value ?? ""}
-                onValueChange={(v) => field.onChange(v || "")}
+                value={field.value === "" ? NONE_SENTINEL : (field.value ?? NONE_SENTINEL)}
+                onValueChange={(v) => field.onChange(v === NONE_SENTINEL ? "" : v)}
               >
                 <SelectTrigger id={elevatorId}>
                   <SelectValue placeholder="–" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={NONE_SENTINEL}>–</SelectItem>
                   {elevatorValues.map((e) => (
                     <SelectItem key={e} value={e}>
                       {ELEVATOR_LABELS[e]}

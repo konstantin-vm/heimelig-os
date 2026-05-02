@@ -123,7 +123,7 @@ export function AddressDialog({
     watch,
     setValue,
     getValues,
-    formState: { errors, isDirty, isSubmitting },
+    formState: { errors, isDirty, isSubmitting, dirtyFields },
   } = useForm<FormValues>({
     defaultValues: EMPTY_DEFAULTS,
     mode: "onBlur",
@@ -146,16 +146,36 @@ export function AddressDialog({
   const addressesRef = useRef(addresses);
   addressesRef.current = addresses;
 
+  // Snapshot of `address.is_default_for_type` taken at dialog-open time.
+  // The submit-time comparator uses this snapshot instead of the live
+  // `address` prop so a Realtime invalidation that flips the row's default
+  // flag mid-edit cannot make the user's submit produce the opposite of
+  // the intended action (round-2 review).
+  const initialIsDefaultRef = useRef<boolean | null>(null);
+
+  // Track whether the user opened the dialog with a specific address row
+  // (edit mode). If that row vanishes from the addresses list while the
+  // dialog is open (cross-session soft-delete), we surface an error and
+  // close the dialog instead of silently resetting the form. Round-2
+  // review: previously the hydration effect re-ran on `address` flipping
+  // to undefined and wiped user input via reset(EMPTY_DEFAULTS).
+  const editTargetIdRef = useRef<string | null>(null);
+
   // Hydrate values when (re-)opening the dialog OR when the edit-target
   // address prop changes. We deliberately do NOT depend on `addresses`:
   // the snapshot is read from the ref above so refetches do not cancel the
   // user's edit.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initialIsDefaultRef.current = null;
+      editTargetIdRef.current = null;
+      return;
+    }
     if (mode === "add") {
       // Default the Hauptadresse switch to true when no other active row of
-      // the default type ('delivery') exists yet — that gives the first new
+      // the seeded type ('delivery') exists yet — that gives the first new
       // delivery address the right initial state. The user can flip it off.
+      // (Type-change re-seed is handled by a separate effect below.)
       const hasDeliveryDefault = (addressesRef.current ?? []).some(
         (a) => a.address_type === "delivery" && a.is_default_for_type,
       );
@@ -163,10 +183,31 @@ export function AddressDialog({
         ...EMPTY_DEFAULTS,
         is_default_for_type: !hasDeliveryDefault,
       });
+      initialIsDefaultRef.current = !hasDeliveryDefault;
+      editTargetIdRef.current = null;
       return;
     }
+    // edit mode
     if (!address) {
-      reset(EMPTY_DEFAULTS);
+      // Open without an address prop on first mount → keep empty defaults
+      // and remember no edit-target. Address-vanished detection (below)
+      // only fires once we've recorded an id.
+      if (editTargetIdRef.current === null) {
+        reset(EMPTY_DEFAULTS);
+        return;
+      }
+      // Address went from defined → undefined while dialog open: handled
+      // by the address-vanished effect below.
+      return;
+    }
+    if (
+      editTargetIdRef.current !== null &&
+      editTargetIdRef.current === address.id
+    ) {
+      // Same edit target as before — `address` prop changed only because
+      // a Realtime refetch returned a fresh row reference. Do NOT reset:
+      // that would wipe in-progress edits. The hydration ref-pattern
+      // applies here just like for the addresses list.
       return;
     }
     reset({
@@ -186,10 +227,65 @@ export function AddressDialog({
       is_default_for_type: address.is_default_for_type,
       bypass_geocoding: false,
     });
+    initialIsDefaultRef.current = address.is_default_for_type;
+    editTargetIdRef.current = address.id;
   }, [open, mode, address, reset]);
 
   const watchedType = watch("address_type");
   const watchedDefault = watch("is_default_for_type");
+
+  // Round-2 review: when the user changes the address-type picker in add
+  // mode, recompute the Hauptadresse seed for the newly-picked partition.
+  // Previously the seed was computed once at open against the seeded
+  // 'delivery' type; switching to e.g. 'billing' (where a default already
+  // exists) left the toggle pre-selected as `true` and surprised the user
+  // with the replace-warning instead of the spec's "default false otherwise"
+  // behaviour (AC1).
+  const watchedTypeForSeed = mode === "add" ? watchedType : null;
+  const seedTypeRef = useRef<typeof watchedType | null>(null);
+  useEffect(() => {
+    if (watchedTypeForSeed === null) {
+      seedTypeRef.current = null;
+      return;
+    }
+    if (seedTypeRef.current === null) {
+      // First record after open — leave the value chosen by the open-effect.
+      seedTypeRef.current = watchedTypeForSeed;
+      return;
+    }
+    if (seedTypeRef.current === watchedTypeForSeed) return;
+    // Type changed — recompute the seed against the new partition.
+    seedTypeRef.current = watchedTypeForSeed;
+    const hasDefault = (addressesRef.current ?? []).some(
+      (a) =>
+        a.address_type === watchedTypeForSeed && a.is_default_for_type,
+    );
+    setValue("is_default_for_type", !hasDefault, { shouldDirty: true });
+    initialIsDefaultRef.current = !hasDefault;
+  }, [watchedTypeForSeed, setValue]);
+
+  // Round-2 review: detect when an edit-target address vanishes from the
+  // addresses list (e.g. another session soft-deleted it). Surface a toast
+  // and close the dialog instead of silently resetting form state and
+  // wiping the user's typed-but-unsaved input.
+  useEffect(() => {
+    if (!open) return;
+    if (mode !== "edit") return;
+    const trackedId = editTargetIdRef.current;
+    if (trackedId === null) return;
+    if (addresses === undefined) return; // initial fetch in flight
+    const stillExists = addresses.some((a) => a.id === trackedId);
+    if (stillExists) return;
+    toast.error(
+      "Adresse wurde gelöscht.",
+      {
+        description:
+          "Diese Adresse wurde von einer anderen Sitzung entfernt. Der Dialog wird geschlossen.",
+      },
+    );
+    editTargetIdRef.current = null;
+    onOpenChange(false);
+  }, [open, mode, addresses, onOpenChange]);
 
   // Existing default of the same type — used for the replace-warning. In
   // edit mode we exclude the row being edited.
@@ -212,13 +308,9 @@ export function AddressDialog({
 
   const [discardOpen, setDiscardOpen] = useState(false);
 
-  function requestClose() {
-    if (isDirty) {
-      setDiscardOpen(true);
-    } else {
-      onOpenChange(false);
-    }
-  }
+  // `requestClose` is defined after the mutations + `submitting` computation
+  // below so it can read the live submitting state. See the function
+  // definition further down.
 
   // Mutations ---------------------------------------------------------------
 
@@ -296,11 +388,42 @@ export function AddressDialog({
     updateMutation.isPending ||
     deleteMutation.isPending;
 
+  function requestClose() {
+    // Round-2 review: refuse close while a mutation is in flight. The
+    // backdrop / Escape would otherwise dismiss the dialog mid-submit and
+    // race the success toast against a freshly-opened next dialog instance.
+    if (submitting) return;
+    if (isDirty) {
+      setDiscardOpen(true);
+    } else {
+      onOpenChange(false);
+    }
+  }
+
   // Submit ------------------------------------------------------------------
 
   const onSubmit: SubmitHandler<FormValues> = (values) => {
     if (createMutation.isPending || updateMutation.isPending) return;
     if (values.address_type === "primary") return; // defense-in-depth
+
+    // Round-2 review: mirror Story 2.1's customer-edit-form geocode guard.
+    // The dialog previously allowed Save with null lat/lng without the user
+    // explicitly bypassing geocoding — silently regressing the address-
+    // validation contract for delivery / billing / other addresses.
+    if (
+      values.lat === null &&
+      values.lng === null &&
+      !values.bypass_geocoding
+    ) {
+      toast.error(
+        "Adresse nicht geprüft.",
+        {
+          description:
+            "Bitte „Adresse prüfen“ klicken oder „Trotzdem speichern“ aktivieren.",
+        },
+      );
+      return;
+    }
 
     const payload: CustomerAddressCreatePayload = {
       address_type: values.address_type,
@@ -327,17 +450,51 @@ export function AddressDialog({
         setDefault: values.is_default_for_type,
       });
     } else if (address) {
-      // Promote via RPC when the default toggle changed in either direction.
-      // Since address_type is read-only in edit mode, we don't need the
-      // type-changed-while-default branch from Story 2.3.
-      const defaultToggled =
-        values.is_default_for_type !== address.is_default_for_type;
+      // Round-2 review: compare against the snapshot taken at dialog-open
+      // time. The live `address` prop can mutate via Realtime invalidation
+      // → parent re-renders with a refreshed row reference; comparing
+      // `values.is_default_for_type !== address.is_default_for_type` with
+      // the live prop would produce the OPPOSITE of the user's intent if
+      // the row's default flag changed under the dialog.
+      const initialIsDefault =
+        initialIsDefaultRef.current ?? address.is_default_for_type;
+      const defaultToggled = values.is_default_for_type !== initialIsDefault;
       const setDefault = defaultToggled ? values.is_default_for_type : undefined;
+
+      // Round-2 review: scope the field-UPDATE to dirtyFields so a pristine
+      // "open + Save" no-op no longer fires a phantom UPDATE + audit row.
+      // Mirrors Story 2.1 round-3 dirtyFields-scoped patch.
+      const dirtyKeys = new Set<
+        "recipient_name" | "street" | "street_number" | "zip" | "city" |
+        "country" | "floor" | "has_elevator" | "access_notes" | "lat" |
+        "lng" | "geocoded_at"
+      >();
+      if (dirtyFields.recipient_name) dirtyKeys.add("recipient_name");
+      if (dirtyFields.street) dirtyKeys.add("street");
+      if (dirtyFields.street_number) dirtyKeys.add("street_number");
+      if (dirtyFields.zip) dirtyKeys.add("zip");
+      if (dirtyFields.city) dirtyKeys.add("city");
+      if (dirtyFields.country) dirtyKeys.add("country");
+      if (dirtyFields.floor) dirtyKeys.add("floor");
+      if (dirtyFields.has_elevator) dirtyKeys.add("has_elevator");
+      if (dirtyFields.access_notes) dirtyKeys.add("access_notes");
+      if (dirtyFields.lat) dirtyKeys.add("lat");
+      if (dirtyFields.lng) dirtyKeys.add("lng");
+      if (dirtyFields.geocoded_at) dirtyKeys.add("geocoded_at");
+
+      // No field changes AND no default-toggle → nothing to do.
+      if (dirtyKeys.size === 0 && setDefault === undefined) {
+        toast.info("Keine Änderungen.");
+        onOpenChange(false);
+        return;
+      }
+
       updateMutation.mutate({
         customerId,
         addressId: address.id,
         values: payload,
         setDefault,
+        dirtyFields: dirtyKeys,
       });
     }
   };

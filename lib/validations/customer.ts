@@ -328,11 +328,21 @@ export const customerAddressDialogSchema = z
     zip: z.string().trim().min(1, { error: "PLZ ist erforderlich" }),
     city: z.string().trim().min(1, { error: "Ort ist erforderlich" }),
     country: z.enum(countryValues),
-    floor: z.string(),
-    has_elevator: z.string(),
+    // floor / has_elevator: Select binds to "" for "no value" (the
+    // empty-state placeholder); valid enum values pass through
+    // floorSchema / elevatorSchema. Round-2 review: previously
+    // `z.string()` with submit-time coercion silently dropped tampered
+    // input; now Zod surfaces the inline error.
+    floor: z.union([floorSchema, z.literal("")]),
+    has_elevator: z.union([elevatorSchema, z.literal("")]),
     access_notes: z.string(),
-    lat: z.number().nullable(),
-    lng: z.number().nullable(),
+    // Round-2 review: bind lat/lng to the geographic-bounds schemas (was
+    // unbounded `z.number().nullable()`). Defense-in-depth: tampered
+    // values like lat=95 now fail at form-validation time instead of
+    // sneaking through to a `numeric(9,6)` column that happens to fit
+    // the precision but is geographically impossible.
+    lat: latitudeSchema.nullable(),
+    lng: longitudeSchema.nullable(),
     geocoded_at: z.string().nullable(),
     is_default_for_type: z.boolean(),
     bypass_geocoding: z.boolean(),
@@ -353,6 +363,20 @@ export const customerAddressDialogSchema = z
         code: "custom",
         path: ["recipient_name"],
         message: "Empfängername darf nicht nur aus Leerzeichen bestehen.",
+      });
+    }
+    // Cross-field invariant: lat/lng/geocoded_at are all-or-nothing.
+    // A partial state (one set, others null) means the geocode result is
+    // inconsistent and should be rejected before reaching the row schema.
+    // Round-2 review.
+    const coordsSet = [value.lat !== null, value.lng !== null, value.geocoded_at !== null];
+    const setCount = coordsSet.filter(Boolean).length;
+    if (setCount !== 0 && setCount !== 3) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["lat"],
+        message:
+          "Koordinaten müssen vollständig sein (lat + lng + geocoded_at) oder vollständig leer.",
       });
     }
   });

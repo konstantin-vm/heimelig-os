@@ -42,7 +42,8 @@ NNNNN_description.sql
 | `00034`        | Story 2.4 — `set_default_customer_address(uuid)` SECURITY DEFINER RPC for atomic Hauptadresse-pro-Typ promote+demote within the (customer_id, address_type) partition. Mirrors `set_primary_customer_insurance` (00027 + 00031): admin/office gate, `set search_path = public`, is_active guard (P0002 on inactive targets), rejects `address_type='primary'` (22023 — primary defaults are managed by Story 2.1 RPCs). Audit rows emitted via existing audit_trigger_fn binding from 00014 (applied 2026-05-02). |
 | `00035`        | Story 2.5 — reserved (pg_trgm + GIN trigram indexes on customers + customer_addresses search columns; no schema change). |
 | `00036`        | Story 2.4 review fixes — re-emit `set_default_customer_address` with a partition-wide `for update` lock before demote+promote (closes the concurrent-promote race that 00034 left open); back-fill `is_default_for_type = false` on soft-deleted rows so a stale partial-unique slot cannot block new defaults of the same type (mirrors the insurance back-fill in 00031). Idempotent on replay. |
-| `00037+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
+| `00037`        | Story 2.4 review round 2 fix — re-emit `set_default_customer_address` with deterministic partition lock order (`order by id for update` over the entire active partition, no `id <> p_address_id` exclusion). The 00036 version locked the target row first, then PERFORMed `for update` on the rest of the partition; two concurrent promotes on different targets in the same partition could each lock their own target first and then mutually wait on each other → 40P01 deadlock. Idempotent on replay. |
+| `00038+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
 
 ## Coordination protocol
 

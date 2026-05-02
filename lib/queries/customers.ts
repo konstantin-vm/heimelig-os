@@ -1213,8 +1213,11 @@ export type CustomerAddressCreatePayload = Omit<
 // Pull the actual constraint name out of a PostgrestError. Supabase surfaces
 // it inside `message` and/or `details` (e.g. `duplicate key value violates
 // unique constraint "idx_customer_addresses_default_per_type_unique"`).
-// Falls back to `unknown_unique` so 23505 from a non-target constraint (PK,
-// FK, etc.) is not mis-attributed to the partial-unique index (review fix).
+// Returns null when no constraint name can be parsed — operators triaging
+// error_log can then distinguish "unparsed" from a real constraint name
+// (round-2 review: previously fell back to literal "unknown_unique" which
+// silently bucketed unparseable 23505s into a phantom constraint and made
+// `details->>'constraint' = '<expected>'` queries miss the bucket).
 function extractConstraintName(
   err: { message?: string | null; details?: string | null } | null | undefined,
 ): string | null {
@@ -1225,7 +1228,50 @@ function extractConstraintName(
     const match = source.match(/constraint "([^"]+)"/);
     if (match && match[1]) return match[1];
   }
-  return "unknown_unique";
+  return null;
+}
+
+// Whitelist of columns that may flow through `useUpdateCustomerAddress`
+// patches. Anything outside this list is stripped before the UPDATE — keeps
+// id, created_*, updated_*, customer_id, address_type (read-only post-create),
+// and is_active (owned by the soft-delete hook) from leaking through stale
+// forms. Typed as `keyof CustomerAddressUpdate` so a future column rename
+// in the Zod schema fails the build instead of silently dropping the strip
+// (round-2 review: previously stringly-typed via `Record<string, unknown>`
+// and `as never`, defeating Supabase's generated types).
+const MUTABLE_ADDRESS_COLUMNS = [
+  "recipient_name",
+  "street",
+  "street_number",
+  "zip",
+  "city",
+  "country",
+  "floor",
+  "has_elevator",
+  "access_notes",
+  "lat",
+  "lng",
+  "geocoded_at",
+] as const satisfies ReadonlyArray<keyof CustomerAddressUpdate>;
+
+type MutableAddressColumn = (typeof MUTABLE_ADDRESS_COLUMNS)[number];
+type CustomerAddressMutablePatch = Partial<
+  Pick<CustomerAddressUpdate, MutableAddressColumn>
+> & {
+  is_default_for_type?: boolean;
+};
+
+function buildAddressPatch(
+  values: CustomerAddressUpdate,
+): CustomerAddressMutablePatch {
+  const out: CustomerAddressMutablePatch = {};
+  for (const key of MUTABLE_ADDRESS_COLUMNS) {
+    if (key in values) {
+      // Type is preserved via the keyof-driven allowlist — no `as never` needed.
+      (out as Record<string, unknown>)[key] = values[key];
+    }
+  }
+  return out;
 }
 
 const ADDRESS_TYPE_ORDER: Record<string, number> = {
@@ -1254,10 +1300,14 @@ function sortAddressesForDisplay<
 
 export function useCustomerAddresses(customerId: string | null) {
   const enabled = customerId !== null && customerId.length > 0;
+  // Use the customerKeys factory shape regardless of enabled state so cache
+  // invalidations on `customerKeys.lists()` / `customerKeys.detail(id)` match
+  // even while the query is disabled. The skipToken queryFn keeps the disabled
+  // state from fetching. Round-2 review: previously used a hand-crafted
+  // `["customers", "addresses", "__disabled__"]` literal which broke the
+  // factory invariant documented in CLAUDE.md ("Manual TanStack Query keys").
   return useQuery({
-    queryKey: enabled
-      ? customerKeys.addresses(customerId)
-      : ["customers", "addresses", "__disabled__"],
+    queryKey: customerKeys.addresses(customerId ?? "__none__"),
     queryFn: enabled
       ? async (): Promise<CustomerAddress[]> => {
           const supabase = createClient();
@@ -1448,6 +1498,14 @@ type UpdateAddressInput = {
   values: CustomerAddressUpdate;
   /** Whether to promote the row to default-for-type via RPC after the patch. */
   setDefault?: boolean;
+  /**
+   * Optional set of dirty column names from the form's `formState.dirtyFields`.
+   * When provided, only listed columns flow through the UPDATE — pristine
+   * fields stay untouched, preventing phantom audit_log rows on no-op saves
+   * (round-2 review; mirrors Story 2.1 round-3 dirtyFields-scoped patch).
+   * When omitted, every mutable column from `values` is sent (legacy callers).
+   */
+  dirtyFields?: ReadonlySet<MutableAddressColumn>;
 };
 
 export function useUpdateCustomerAddress(
@@ -1460,26 +1518,27 @@ export function useUpdateCustomerAddress(
       addressId,
       values,
       setDefault,
+      dirtyFields,
     }: UpdateAddressInput) => {
       const supabase = createClient();
 
-      // Strip is_default_for_type from the patch — promote needs the RPC to
-      // sidestep idx_customer_addresses_default_per_type_unique. Demote
-      // (false) is safe to fold back into the single UPDATE below.
-      // Also strip every non-mutable column so a stale form (or future
-      // regression) cannot smuggle is_active=false through the update path
-      // and bypass the dedicated soft-delete hook + its
-      // is_default_for_type=false cleanup (review fix).
-      const cleanedPatch: Record<string, unknown> = { ...values };
-      delete cleanedPatch.is_default_for_type;
-      delete cleanedPatch.customer_id;
-      delete cleanedPatch.address_type; // address_type is read-only post-create
-      delete cleanedPatch.is_active; // soft-delete owns this column
-      delete cleanedPatch.id;
-      delete cleanedPatch.created_at;
-      delete cleanedPatch.created_by;
-      delete cleanedPatch.updated_at;
-      delete cleanedPatch.updated_by;
+      // Build the patch via the typed allowlist (strips id, created_*,
+      // updated_*, customer_id, address_type, is_active automatically).
+      // Promote to default-for-type goes through the RPC below — we strip
+      // is_default_for_type from the field-UPDATE; demote (false) is folded
+      // in. When `dirtyFields` is provided, intersect with the allowlist so
+      // pristine columns stay untouched (no phantom audit on no-op save).
+      let cleanedPatch: CustomerAddressMutablePatch =
+        buildAddressPatch(values);
+      if (dirtyFields) {
+        const filtered: CustomerAddressMutablePatch = {};
+        for (const key of MUTABLE_ADDRESS_COLUMNS) {
+          if (dirtyFields.has(key) && key in cleanedPatch) {
+            (filtered as Record<string, unknown>)[key] = cleanedPatch[key];
+          }
+        }
+        cleanedPatch = filtered;
+      }
       if (setDefault === false) {
         cleanedPatch.is_default_for_type = false;
       }
@@ -1624,10 +1683,15 @@ export function useSoftDeleteCustomerAddress(
       const patch = restore
         ? { is_active: true }
         : { is_active: false, is_default_for_type: false };
+      // Filter on the OPPOSITE current state so already-deleted (or
+      // already-restored) UPDATEs return zero rows and surface as a clear
+      // "row not in expected state" failure instead of an idempotent-success
+      // that masks a concurrency issue. Round-2 review fix.
       const { data: updated, error } = await supabase
         .from("customer_addresses")
         .update(patch as never)
         .eq("id", addressId)
+        .eq("is_active", restore ? false : true)
         .select("id");
 
       if (error) {

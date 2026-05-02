@@ -20,7 +20,12 @@ export type AddressRowProps = {
 
 const ACCESS_NOTES_TRUNCATE = 120;
 
-function formatAddressLine(address: CustomerAddress): string {
+// Exported so other consumers (e.g. customer-addresses-card delete-confirm)
+// render the same address-line shape — country is included only when
+// `country !== 'CH'`. Round-2 review: previously the card built its own
+// inline addressLine that omitted country, drifting from the row format
+// for foreign addresses.
+export function formatAddressLine(address: CustomerAddress): string {
   const street = [address.street, address.street_number]
     .filter((s): s is string => Boolean(s && s.trim()))
     .join(" ");

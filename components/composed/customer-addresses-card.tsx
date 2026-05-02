@@ -24,7 +24,7 @@ import {
   AddressDialog,
   type AddressDialogMode,
 } from "./address-dialog";
-import { AddressRow } from "./address-row";
+import { AddressRow, formatAddressLine } from "./address-row";
 import { ConfirmDialog } from "./confirm-dialog";
 
 export type CustomerAddressesCardProps = {
@@ -71,6 +71,10 @@ export function CustomerAddressesCard({
   // this customer's customer_addresses rows. Channel name includes useId()
   // suffix to avoid double-subscription under React strict mode + HMR
   // (Story 2.2 review patch).
+  // Round-2 review: also invalidate `customerKeys.detail(customerId)` so a
+  // cross-session change to a primary-address row refreshes the customer
+  // detail header (which renders the primary address). Mutation hooks
+  // already do this; Realtime now matches that contract.
   useEffect(() => {
     if (!customerId) return;
     const supabase = createClient();
@@ -87,6 +91,9 @@ export function CustomerAddressesCard({
         () => {
           queryClient.invalidateQueries({
             queryKey: customerKeys.addresses(customerId),
+          });
+          queryClient.invalidateQueries({
+            queryKey: customerKeys.detail(customerId),
           });
         },
       )
@@ -118,6 +125,13 @@ export function CustomerAddressesCard({
   async function confirmRowDelete() {
     if (!rowDelete) return;
     const target = rowDelete;
+    // Snapshot whether the row was a default at delete-time so the restore
+    // toast can hint that the row will come back as non-default. Round-2
+    // review: previously the restore toast was silent about the lost
+    // default flag, leaving the user to discover the change on their own.
+    const wasDefault =
+      addresses.find((a) => a.id === target.id)?.is_default_for_type ??
+      false;
     try {
       await softDeleteMutation.mutateAsync({
         customerId,
@@ -136,7 +150,15 @@ export function CustomerAddressesCard({
               },
               {
                 onSuccess: () => {
-                  toast.success("Adresse wiederhergestellt.");
+                  toast.success(
+                    "Adresse wiederhergestellt.",
+                    wasDefault
+                      ? {
+                          description:
+                            "Hinweis: Die Adresse kommt als Nicht-Hauptadresse zurück. Bitte bei Bedarf erneut als Hauptadresse markieren.",
+                        }
+                      : undefined,
+                  );
                 },
                 onError: (err) => {
                   toast.error("Wiederherstellen fehlgeschlagen.", {
@@ -156,6 +178,14 @@ export function CustomerAddressesCard({
   }
 
   const showPrimaryMissingHint = !isLoading && primaryCount === 0;
+  // Round-2 review: empty-state should fire for the steady-state "primary
+  // present, no extras" — post-Story-2.1 the primary always exists, so
+  // gating on `addresses.length === 0` left the empty CTA unreachable. The
+  // empty branch now considers only non-primary rows.
+  const extrasCount = addresses.filter(
+    (a) => a.address_type !== "primary",
+  ).length;
+  const showEmptyState = !isLoading && extrasCount === 0;
 
   return (
     <Card>
@@ -182,15 +212,6 @@ export function CustomerAddressesCard({
           <p className="py-6 text-center text-sm text-muted-foreground">
             Daten werden geladen…
           </p>
-        ) : addresses.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              Noch keine zusätzliche Adresse erfasst.
-            </p>
-            <Button type="button" variant="outline" onClick={openAdd}>
-              Adresse hinzufügen
-            </Button>
-          </div>
         ) : (
           <div className="flex flex-col gap-1">
             {showPrimaryMissingHint ? (
@@ -208,6 +229,16 @@ export function CustomerAddressesCard({
                 onDelete={openRowDelete}
               />
             ))}
+            {showEmptyState ? (
+              <div className="flex flex-col items-center gap-3 py-4 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Noch keine zusätzliche Adresse erfasst.
+                </p>
+                <Button type="button" variant="outline" onClick={openAdd}>
+                  Adresse hinzufügen
+                </Button>
+              </div>
+            ) : null}
           </div>
         )}
       </CardContent>
@@ -231,13 +262,10 @@ export function CustomerAddressesCard({
         title="Adresse löschen?"
         description={(() => {
           if (!rowDeleteAddress) return null;
-          const street = [rowDeleteAddress.street, rowDeleteAddress.street_number]
-            .filter((s): s is string => Boolean(s && s.trim()))
-            .join(" ");
-          const cityZip = [rowDeleteAddress.zip, rowDeleteAddress.city]
-            .filter((s): s is string => Boolean(s && s.trim()))
-            .join(" ");
-          const addressLine = [street, cityZip].filter(Boolean).join(", ") || "—";
+          // Round-2 review: use the shared `formatAddressLine` helper so
+          // the delete-confirm body matches the AddressRow display for
+          // foreign-country addresses (previously omitted country here).
+          const addressLine = formatAddressLine(rowDeleteAddress) || "—";
           const recipient = rowDeleteAddress.recipient_name?.trim() || addressLine;
           const typeLabel = ADDRESS_TYPE_LABELS[rowDeleteAddress.address_type];
           const customerHint = customerLabel?.trim()

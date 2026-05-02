@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { Plus } from "lucide-react";
 
 import {
   CustomerEditForm,
+  CustomerListFilters,
   CustomerTable,
   PageHeader,
   PageShell,
 } from "@/components/composed";
 import { Button } from "@/components/ui/button";
-import { CUSTOMER_LIST_LIMIT, useCustomersList } from "@/lib/queries/customers";
+import { useCustomersTotalCount } from "@/lib/queries/customers";
 
 type ModalState =
   | { mode: "closed" }
@@ -18,34 +19,45 @@ type ModalState =
   | { mode: "edit"; customerId: string };
 
 export default function CustomersPage() {
-  const [modal, setModal] = useState<ModalState>({ mode: "closed" });
-  const { data } = useCustomersList();
-  const totalCount = data?.length ?? null;
+  return (
+    <PageShell title="Kunden">
+      <Suspense
+        fallback={
+          <p className="rounded-md border bg-card px-3 py-2 text-sm text-muted-foreground">
+            Lade Kunden…
+          </p>
+        }
+      >
+        <CustomersPageBody />
+      </Suspense>
+    </PageShell>
+  );
+}
 
-  // D2 (Round 3) — interim warning until Story 2.5 ships pagination. The
-  // list query caps at CUSTOMER_LIST_LIMIT rows; if we hit the cap, more
-  // customers exist and the office user must be told.
-  const isTruncated =
-    totalCount !== null && totalCount >= CUSTOMER_LIST_LIMIT;
+function CustomersPageBody() {
+  const [modal, setModal] = useState<ModalState>({ mode: "closed" });
+  // Search term lives in component state — never enters the URL — so customer
+  // names typed into the search box don't leak to Vercel Frankfurt access logs
+  // (nDSG: PII must not cross Frankfurt). All other filters stay URL-synced
+  // because they're non-PII and remain shareable.
+  const [searchTerm, setSearchTerm] = useState("");
+  const { data: totalCount } = useCustomersTotalCount();
 
   const handleOpenChange = (open: boolean) => {
     if (!open) setModal({ mode: "closed" });
   };
 
   return (
-    <PageShell title="Kunden">
+    <>
       <PageHeader
         title="Kunden"
-        count={totalCount}
+        count={totalCount ?? null}
         actions={
           <>
             <Button onClick={() => setModal({ mode: "create" })}>
               <Plus className="h-4 w-4" />
               Neuer Kunde
             </Button>
-            {/* P17 (Round 3) — drop the implementation-detail aria-label;
-                visible button text already announces the action, and the
-                disabled state is conveyed by the native attribute. */}
             <Button variant="outline" disabled>
               <Plus className="h-4 w-4" />
               Neuer Auftrag
@@ -54,17 +66,14 @@ export default function CustomersPage() {
         }
       />
 
-      {isTruncated ? (
-        <div
-          role="status"
-          className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning-foreground"
-        >
-          Liste gekürzt — nur die ersten {CUSTOMER_LIST_LIMIT} Kunden werden angezeigt.
-          Suche / Filter folgen mit Story 2.5.
-        </div>
-      ) : null}
+      <CustomerListFilters
+        searchTerm={searchTerm}
+        onSearchTermChange={setSearchTerm}
+      />
 
       <CustomerTable
+        searchTerm={searchTerm}
+        onClearSearchTerm={() => setSearchTerm("")}
         onEdit={(customerId) => setModal({ mode: "edit", customerId })}
       />
 
@@ -79,6 +88,6 @@ export default function CustomersPage() {
           onOpenChange={handleOpenChange}
         />
       ) : null}
-    </PageShell>
+    </>
   );
 }

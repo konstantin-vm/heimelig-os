@@ -1,4 +1,5 @@
 import {
+  keepPreviousData,
   skipToken,
   useMutation,
   useQuery,
@@ -7,6 +8,14 @@ import {
 } from "@tanstack/react-query";
 
 import { createClient } from "@/lib/supabase/client";
+import { cantonFromZip } from "@/lib/utils/canton";
+import {
+  CUSTOMER_LIST_DEFAULT_SORT,
+  CUSTOMER_LIST_PAGE_SIZE,
+  type CustomerListSortColumn,
+  type CustomerListSortDir,
+} from "@/lib/constants/customer";
+import type { SwissCantonCode } from "@/lib/constants/swiss-cantons";
 import { logError } from "@/lib/utils/error-log";
 import type {
   ContactPerson,
@@ -28,11 +37,36 @@ import type { PartnerInsurer } from "@/lib/validations/partner-insurer";
 // section + customer-list.md design-context shape).
 // ---------------------------------------------------------------------------
 
+/**
+ * Insurer filter values surfaced by the S-003 Versicherung select.
+ * - Partner codes (`helsana`/`sanitas`/`kpt`/`visana`) → server-side filter
+ *   via `customer_insurance!inner.partner_insurers.code`.
+ * - `other` → freetext insurer (partner_insurer_id null + freetext set).
+ * - `none` → no active grund row; Sprint-1 carve-out (Resolved decision)
+ *   filters client-side after the page fetch.
+ */
+export type CustomerInsurerFilter =
+  | "helsana"
+  | "sanitas"
+  | "kpt"
+  | "visana"
+  | "other"
+  | "none";
+
+export type CustomerTimeframeFilter = "30d" | "6m" | "1y" | "older";
+
+export type CustomerStatusFilter = "active" | "inactive";
+
 export type CustomerListFilters = {
   search?: string;
-  region?: string | null;
-  insurer?: string | null;
-  timeframe?: "30d" | "6m" | "1y" | "older" | null;
+  region?: SwissCantonCode | null;
+  insurer?: CustomerInsurerFilter | null;
+  timeframe?: CustomerTimeframeFilter | null;
+  status?: CustomerStatusFilter | null;
+  sort?: CustomerListSortColumn;
+  dir?: CustomerListSortDir;
+  page?: number;
+  pageSize?: number;
 };
 
 export const customerKeys = {
@@ -48,6 +82,12 @@ export const customerKeys = {
     [...customerKeys.all, "detail", id, "insurance"] as const,
   addresses: (id: string) =>
     [...customerKeys.all, "detail", id, "addresses"] as const,
+  bexio: (id: string) =>
+    [...customerKeys.all, "detail", id, "bexio"] as const,
+  recentOrders: (id: string) =>
+    [...customerKeys.all, "detail", id, "recent-orders"] as const,
+  activeDevices: (id: string) =>
+    [...customerKeys.all, "detail", id, "active-devices"] as const,
 };
 
 export const partnerInsurerKeys = {
@@ -56,8 +96,16 @@ export const partnerInsurerKeys = {
 };
 
 // ---------------------------------------------------------------------------
-// Row shape returned by useCustomersList — joins primary address.
+// Row shape returned by useCustomersList — joins primary address + primary
+// grund insurance (latest active row, is_primary=true) for the badge column.
 // ---------------------------------------------------------------------------
+
+export type CustomerListPrimaryInsurer = {
+  /** Partner-KK code when linked to a seeded partner_insurers row. */
+  partner_code: string | null;
+  /** Freetext insurer name when not a partner-KK ("Andere"). */
+  freetext_name: string | null;
+};
 
 export type CustomerListRow = Pick<
   Customer,
@@ -75,8 +123,14 @@ export type CustomerListRow = Pick<
 > & {
   primary_address: Pick<
     CustomerAddress,
-    "id" | "street" | "street_number" | "zip" | "city"
+    "id" | "street" | "street_number" | "zip" | "city" | "country"
   > | null;
+  primary_insurer: CustomerListPrimaryInsurer | null;
+};
+
+export type CustomerListResult = {
+  rows: CustomerListRow[];
+  total: number;
 };
 
 export type CustomerDetail = Customer & {
@@ -87,52 +141,216 @@ export type CustomerDetail = Customer & {
 // Hooks
 // ---------------------------------------------------------------------------
 
-/**
- * D2 (Round 3) — interim cap until Story 2.5 ships pagination. The list page
- * surfaces a "Liste gekürzt — N von M" warning when the result length hits
- * this cap, so office users aren't blind-sided after the Blue-Office import
- * pushes the active-customer count past the limit.
- */
-export const CUSTOMER_LIST_LIMIT = 200;
+const TIMEFRAME_TO_FROM: Record<CustomerTimeframeFilter, () => Date | null> = {
+  "30d": () => new Date(Date.now() - 30 * 24 * 3600 * 1000),
+  "6m": () => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 6);
+    return d;
+  },
+  "1y": () => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 1);
+    return d;
+  },
+  // "older" is open-ended at the lower bound and bounded at the upper end —
+  // older than 1 year. We model it as "< now() - 1y" via .lt().
+  older: () => null,
+};
 
+function applySortOrder<
+  Q extends {
+    order: (col: string, opts: { ascending: boolean; nullsFirst?: boolean }) => Q;
+  },
+>(query: Q, sort: CustomerListSortColumn, dir: CustomerListSortDir): Q {
+  const ascending = dir === "asc";
+  switch (sort) {
+    case "last_name":
+      // Default tri-key: last_name → company_name → id. Institution rows fall
+      // through to company_name when last_name is null.
+      return query
+        .order("last_name", { ascending, nullsFirst: false })
+        .order("company_name", { ascending, nullsFirst: false })
+        .order("id", { ascending });
+    case "phone":
+      return query
+        .order("phone", { ascending, nullsFirst: false })
+        .order("id", { ascending });
+    case "created_at":
+      return query
+        .order("created_at", { ascending })
+        .order("id", { ascending });
+    case "bexio_sync_status":
+      return query
+        .order("bexio_sync_status", { ascending, nullsFirst: false })
+        .order("id", { ascending });
+    default:
+      return query.order("last_name", { ascending: true, nullsFirst: false });
+  }
+}
+
+/**
+ * Story 2.5 — full customer list with server-side filtering, sorting, and
+ * pagination. Returns `{ rows, total }` so the page header count badge stays
+ * in sync with the actual filter outcome.
+ *
+ * Filter strategy:
+ *   - search → PostgREST `.or(...ilike)` across customer + address columns
+ *     (accelerated by the trigram indexes from migration 00035).
+ *   - status → server-side `.eq('is_active', …)`.
+ *   - timeframe → server-side `.gte/.lt` on `customers.created_at`.
+ *   - insurer → server-side via embedded `customer_insurance!inner` +
+ *     `partner_insurers!inner` filter; "other" maps to
+ *     `partner_insurer_id IS NULL AND insurer_name_freetext IS NOT NULL`;
+ *     "none" is a Sprint-1 carve-out (resolved decision) — filtered
+ *     client-side on the fetched page (total may overshoot — documented).
+ *   - region → client-side post-filter (PLZ→canton derivation is JS only;
+ *     same Sprint-1 carve-out as the spec explicitly documents).
+ *
+ * keepPreviousData prevents flash-of-empty between filter changes (TanStack
+ * v5 idiom — replaces the deprecated `keepPreviousData: true` boolean).
+ */
 export function useCustomersList(filters: CustomerListFilters = {}) {
   return useQuery({
     queryKey: customerKeys.list(filters),
-    queryFn: async (): Promise<CustomerListRow[]> => {
+    placeholderData: keepPreviousData,
+    queryFn: async (): Promise<CustomerListResult> => {
       const supabase = createClient();
-      // P11 — outer (LEFT) join on customer_addresses; legacy customers
-      // imported without a primary address row must still appear in the list
-      // (otherwise they look "deleted" to office users).
-      const { data, error } = await supabase
-        .from("customers")
-        .select(
-          `
+      const sort = filters.sort ?? CUSTOMER_LIST_DEFAULT_SORT.col;
+      const dir = filters.dir ?? CUSTOMER_LIST_DEFAULT_SORT.dir;
+      const pageSize = filters.pageSize ?? CUSTOMER_LIST_PAGE_SIZE;
+      const page = filters.page && filters.page > 0 ? filters.page : 1;
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+
+      const search = filters.search?.trim() ?? "";
+      const insurer = filters.insurer ?? null;
+      const timeframe = filters.timeframe ?? null;
+      const status = filters.status ?? null;
+
+      // Embed shape — !inner switches in when an insurer filter is set so
+      // customers without a matching active grund row drop out at the DB.
+      // Otherwise !left preserves "Keine"-state customers in the result.
+      const isPartnerInsurer =
+        insurer === "helsana" ||
+        insurer === "sanitas" ||
+        insurer === "kpt" ||
+        insurer === "visana";
+      const isOtherInsurer = insurer === "other";
+      // "none" stays !left + client-side filter (no active row exists).
+      const insuranceJoin = isPartnerInsurer || isOtherInsurer ? "!inner" : "!left";
+
+      const selectShape = `
+        id,
+        customer_number,
+        customer_type,
+        first_name,
+        last_name,
+        company_name,
+        phone,
+        email,
+        is_active,
+        created_at,
+        bexio_sync_status,
+        customer_addresses (
           id,
-          customer_number,
-          customer_type,
-          first_name,
-          last_name,
-          company_name,
-          phone,
-          email,
+          address_type,
+          is_default_for_type,
           is_active,
-          created_at,
-          bexio_sync_status,
-          customer_addresses (
+          street,
+          street_number,
+          zip,
+          city,
+          country
+        ),
+        customer_insurance${insuranceJoin} (
+          id,
+          insurance_type,
+          is_primary,
+          is_active,
+          partner_insurer_id,
+          insurer_name_freetext,
+          partner_insurers (
             id,
-            address_type,
-            is_default_for_type,
-            street,
-            street_number,
-            zip,
-            city
+            code,
+            name
           )
-          `,
         )
-        .eq("is_active", true)
-        .order("last_name", { ascending: true, nullsFirst: false })
-        .order("company_name", { ascending: true, nullsFirst: false })
-        .limit(CUSTOMER_LIST_LIMIT);
+      `;
+
+      let query = supabase
+        .from("customers")
+        .select(selectShape, { count: "exact" });
+
+      // Status filter — Aktiv (true), Inaktiv (false), Alle (no clause).
+      if (status === "active") query = query.eq("is_active", true);
+      else if (status === "inactive") query = query.eq("is_active", false);
+
+      // Timeframe filter — bucket by created_at.
+      if (timeframe) {
+        const fromBoundary = TIMEFRAME_TO_FROM[timeframe]();
+        if (timeframe === "older") {
+          const oneYearAgo = new Date();
+          oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+          query = query.lt("created_at", oneYearAgo.toISOString());
+        } else if (fromBoundary) {
+          query = query.gte("created_at", fromBoundary.toISOString());
+        }
+      }
+
+      // Search filter — substring ILIKE across customer + embedded
+      // customer_addresses.{street,city,zip} per AC2. Routes through the
+      // `public.search_customer_ids(q)` SQL function (migration 00039) so the
+      // OR-across-to-many-embed pattern works without forcing `!inner` on
+      // the address embed (which would drop customers with no address row).
+      // Trigram indexes (00035) cover all nine columns the function reads.
+      if (search.length > 0) {
+        const { data: searchedIds, error: searchErr } = await supabase.rpc(
+          "search_customer_ids",
+          { q: search },
+        );
+        if (searchErr) {
+          await logError(
+            {
+              errorType: "DB_FUNCTION",
+              severity: "error",
+              source: "customer-list",
+              message: searchErr.message,
+              details: {
+                code: searchErr.code ?? null,
+                operation: "search_customer_ids",
+              },
+            },
+            supabase,
+          );
+          throw searchErr;
+        }
+        const ids = searchedIds ?? [];
+        if (ids.length === 0) {
+          return { rows: [], total: 0 };
+        }
+        query = query.in("id", ids);
+      }
+
+      // Insurer filter — partner_codes route through embedded inner-join.
+      if (isPartnerInsurer && insurer) {
+        query = query
+          .eq("customer_insurance.is_primary", true)
+          .eq("customer_insurance.is_active", true)
+          .eq("customer_insurance.insurance_type", "grund")
+          .eq("customer_insurance.partner_insurers.code", insurer);
+      } else if (isOtherInsurer) {
+        query = query
+          .eq("customer_insurance.is_primary", true)
+          .eq("customer_insurance.is_active", true)
+          .eq("customer_insurance.insurance_type", "grund")
+          .is("customer_insurance.partner_insurer_id", null);
+      }
+
+      query = applySortOrder(query, sort, dir);
+      query = query.range(from, to);
+
+      const { data, error, count } = await query;
 
       if (error) {
         await logError(
@@ -141,23 +359,92 @@ export function useCustomersList(filters: CustomerListFilters = {}) {
             severity: "error",
             source: "customer-list",
             message: error.message,
-            details: { code: error.code ?? null, operation: "list" },
+            details: {
+              code: error.code ?? null,
+              operation: "list",
+              // PII-safe — never log search string itself; record presence only
+              // (Story 1.5 AC14 — search strings can carry customer names).
+              filterCount: [
+                search ? "search" : null,
+                filters.region ?? null,
+                filters.insurer ?? null,
+                filters.timeframe ?? null,
+                filters.status ?? null,
+              ].filter(Boolean).length,
+            },
           },
           supabase,
         );
         throw error;
       }
 
-      return (data ?? []).map((row) => {
-        const { customer_addresses, ...customer } = row; // P30
-        const addressRows = Array.isArray(customer_addresses)
+      type EmbeddedAddressRow = {
+        id: string;
+        address_type: string;
+        is_default_for_type: boolean;
+        is_active: boolean;
+        street: string | null;
+        street_number: string | null;
+        zip: string | null;
+        city: string | null;
+        country: string | null;
+      };
+      type EmbeddedInsuranceRow = {
+        insurance_type: string;
+        is_primary: boolean;
+        is_active: boolean;
+        partner_insurer_id: string | null;
+        insurer_name_freetext: string | null;
+        partner_insurers: { code: string | null; name: string | null } | null;
+      };
+      type RawListRow = Pick<
+        Customer,
+        | "id"
+        | "customer_number"
+        | "customer_type"
+        | "first_name"
+        | "last_name"
+        | "company_name"
+        | "phone"
+        | "email"
+        | "is_active"
+        | "created_at"
+        | "bexio_sync_status"
+      > & {
+        customer_addresses: EmbeddedAddressRow[] | EmbeddedAddressRow | null;
+        customer_insurance: EmbeddedInsuranceRow[] | EmbeddedInsuranceRow | null;
+      };
+
+      const rawRows = ((data ?? []) as unknown as RawListRow[]).map((row) => {
+        const {
+          customer_addresses,
+          customer_insurance,
+          ...customer
+        } = row;
+
+        const addressRows: EmbeddedAddressRow[] = Array.isArray(customer_addresses)
           ? customer_addresses
           : customer_addresses
             ? [customer_addresses]
             : [];
         const primary = addressRows.find(
-          (a) => a.address_type === "primary" && a.is_default_for_type,
+          (a) =>
+            a.address_type === "primary" &&
+            a.is_default_for_type &&
+            a.is_active,
         );
+
+        const insuranceRows: EmbeddedInsuranceRow[] = Array.isArray(
+          customer_insurance,
+        )
+          ? customer_insurance
+          : customer_insurance
+            ? [customer_insurance]
+            : [];
+        const primaryGrund = insuranceRows.find(
+          (i) => i.is_active && i.is_primary && i.insurance_type === "grund",
+        );
+
         return {
           ...customer,
           primary_address: primary
@@ -167,11 +454,110 @@ export function useCustomersList(filters: CustomerListFilters = {}) {
                 street_number: primary.street_number,
                 zip: primary.zip,
                 city: primary.city,
+                country: primary.country,
+              }
+            : null,
+          primary_insurer: primaryGrund
+            ? {
+                partner_code: primaryGrund.partner_insurers?.code ?? null,
+                freetext_name: primaryGrund.insurer_name_freetext,
               }
             : null,
         } as CustomerListRow;
       });
+
+      // "none" insurer Sprint-1 carve-out — filter rows where no primary
+      // grund insurer exists. The total reported back will include all rows
+      // before this filter (documented Sprint-1 limitation).
+      let filteredRows = rawRows;
+      if (insurer === "none") {
+        filteredRows = filteredRows.filter((r) => r.primary_insurer === null);
+      }
+
+      // Region filter — PLZ→canton derivation is JS only; client-side post-
+      // filter on the fetched page (Sprint-1 documented carve-out).
+      const region = filters.region ?? null;
+      if (region) {
+        filteredRows = filteredRows.filter((r) => {
+          const z = r.primary_address?.zip ?? null;
+          return cantonFromZip(z) === region;
+        });
+      }
+
+      return {
+        rows: filteredRows,
+        total: count ?? filteredRows.length,
+      };
     },
+  });
+}
+
+/**
+ * Story 2.5 — separate hook for the page-header count badge so it stays
+ * in sync with the unfiltered total customer count (the badge shows total
+ * customers, not filtered results). 5-minute staleTime keeps office users
+ * from refetching on every filter tick.
+ */
+export function useCustomersTotalCount() {
+  return useQuery({
+    queryKey: customerKeys.totalCount(),
+    queryFn: async (): Promise<number> => {
+      const supabase = createClient();
+      const { count, error } = await supabase
+        .from("customers")
+        .select("id", { count: "exact", head: true })
+        .eq("is_active", true);
+
+      if (error) {
+        await logError(
+          {
+            errorType: "DB_FUNCTION",
+            severity: "error",
+            source: "customer-list",
+            message: error.message,
+            details: {
+              code: error.code ?? null,
+              operation: "total-count",
+            },
+          },
+          supabase,
+        );
+        throw error;
+      }
+      return count ?? 0;
+    },
+    staleTime: 1000 * 60 * 5, // 5 min
+  });
+}
+
+/**
+ * Story 2.5 — Epic-4 stub. Returns an empty list so the
+ * `<CustomerOrdersCard>` exercises its empty state. Epic 4 Story 4.6 swaps
+ * the body to actually query `orders` filtered by `customer_id`.
+ */
+export function useRecentOrders(customerId: string | null) {
+  const enabled = customerId !== null && customerId.length > 0;
+  return useQuery({
+    queryKey: customerKeys.recentOrders(customerId ?? "__none__"),
+    queryFn: enabled
+      ? async (): Promise<unknown[]> => Promise.resolve([])
+      : skipToken,
+  });
+}
+
+/**
+ * Story 2.5 — Epic-5 stub. Returns an empty list so the
+ * `<CustomerDevicesCard>` exercises its empty state. Epic 5 Story 5.2 swaps
+ * the body to actually query `rental_contracts` joined with `devices` filtered
+ * by `customer_id`.
+ */
+export function useActiveDevices(customerId: string | null) {
+  const enabled = customerId !== null && customerId.length > 0;
+  return useQuery({
+    queryKey: customerKeys.activeDevices(customerId ?? "__none__"),
+    queryFn: enabled
+      ? async (): Promise<unknown[]> => Promise.resolve([])
+      : skipToken,
   });
 }
 

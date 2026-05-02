@@ -1,18 +1,11 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 
-import {
-  CustomerAddressesCard,
-  CustomerContactsCard,
-  CustomerInsuranceCard,
-  PageShell,
-} from "@/components/composed";
+import { PageShell } from "@/components/composed";
 import { createClient } from "@/lib/supabase/server";
 import { logError } from "@/lib/utils/error-log";
 
-// Story 2.2 stub. Story 2.5 will replace the body with the full S-004 layout
-// (info, insurance, bexio, devices, orders cards). The Kontakte card stays
-// as-is.
+import { CustomerProfileShell } from "./_components/customer-profile-shell";
 
 type RouteParams = Promise<{ id: string }>;
 
@@ -63,19 +56,10 @@ async function CustomerProfileBody({ params }: { params: RouteParams }) {
 
   const fullName =
     data.customer_type === "private"
-      ? [data.last_name, data.first_name].filter(Boolean).join(", ") ||
-        "Kunde"
+      ? [data.last_name, data.first_name].filter(Boolean).join(", ") || "Kunde"
       : data.company_name || "Kunde";
 
-  return (
-    <PageShell title={fullName} backHref="/customers">
-      <div className="flex flex-col gap-6">
-        <CustomerContactsCard customerId={data.id} customerLabel={fullName} />
-        <CustomerInsuranceCard customerId={data.id} customerLabel={fullName} />
-        <CustomerAddressesCard customerId={data.id} customerLabel={fullName} />
-      </div>
-    </PageShell>
-  );
+  return <CustomerProfileShell customerId={data.id} fullName={fullName} />;
 }
 
 function ProfileSkeleton() {

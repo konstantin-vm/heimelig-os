@@ -1628,6 +1628,7 @@ export type Database = {
         Returns: string
       }
       purge_resolved_error_log: { Args: never; Returns: number }
+      search_customer_ids: { Args: { q: string }; Returns: string[] }
       set_default_customer_address: {
         Args: { p_address_id: string }
         Returns: undefined
@@ -1640,6 +1641,8 @@ export type Database = {
         Args: { p_insurance_id: string }
         Returns: undefined
       }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
       storage_first_segment_is_uuid: {
         Args: { p_name: string }
         Returns: boolean

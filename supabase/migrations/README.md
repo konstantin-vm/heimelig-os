@@ -23,7 +23,9 @@ NNNNN_description.sql
 | `00015`        | Story 1.5 review round 1 fixes (applied 2026-04-27). |
 | `00016`        | Story 1.5 review round 2 fixes — FK-cascade-vs-immutability narrow exception (applied 2026-04-27). |
 | `00017`        | Story 1.5 review round 3 fixes — dual-cascade gap on error_log + decomposed guard (applied 2026-04-27). |
-| `00018–00020`  | Story 1.6 — storage bucket policies.                |
+| `00018`        | Story 1.6 — storage buckets (`medical-certs`, `qr-labels`, `signatures`) with bucket-level MIME / size allowlist (applied 2026-04-29). |
+| `00019`        | Story 1.6 — role-based RLS policies on `storage.objects` for admin / office / warehouse + `storage_first_segment_is_uuid()` helper (applied 2026-04-29). |
+| `00020`        | Story 1.6 reserved (unused). Kept for a potential review fix-up before the slot is released. |
 | `00021–00022`  | Story 1.7 — bexio credentials + OAuth2 plumbing.    |
 | `00023`        | Story 2.1 — `customer_number_seq` + `gen_next_customer_number()` + `create_customer_with_primary_address()` (applied 2026-04-28). |
 | `00024`        | Story 2.2 — `set_primary_contact_person(uuid)` RPC (atomic Hauptkontakt promote+demote). |
@@ -249,6 +251,26 @@ log_error(
 - Never rolls back the caller's transaction.
 - **nDSG rule:** `p_details` MUST NOT contain raw customer PII (names, addresses, insurance numbers, emails). Pass IDs + structured codes only.
 - From TypeScript: `lib/utils/error-log.ts` exports `logError({ errorType, severity, source, message, details?, entity?, entityId?, requestId? }, supabaseClient)`.
+
+## Storage policies
+
+Migrations `00018` (buckets) + `00019` (policies on `storage.objects`) ship the storage foundation. See [`heimelig-os/supabase/storage/README.md`](../storage/README.md) for the per-bucket reference (MIME allowlist, size limits, path conventions, role matrix).
+
+**Policy naming.** `{bucket_id_with_underscores}_{role}_{op}` — e.g. `medical_certs_admin_insert`, `qr_labels_warehouse_select`, `signatures_office_select`. Bucket ids contain hyphens (`medical-certs`); identifier names cannot, so the slug uses underscores. Documented to head off the typo flag.
+
+**Predicate idiom.** Every storage policy uses the same predicate shape:
+
+```sql
+bucket_id = '<bucket>'
+  and public.is_<role>()
+  and public.storage_first_segment_is_uuid(name)
+```
+
+`public.storage_first_segment_is_uuid(text) returns boolean` (defined in `00019`) checks that the first folder segment of the object path matches the canonical UUID shape. Today the policies enforce **shape only** for the first-segment entity (the entity-existence join lives in the consumer-story migration that adds the referenced table — `rental_contracts` for `medical-certs`, `tour_stops` for `signatures`/`qr-labels` technician scope).
+
+**Idempotency.** Every policy is `drop policy if exists ... ; create policy ...`. A second `supabase db push --linked` is a no-op.
+
+**Forbidden in storage policies.** Never use `for all` (every cell of the role matrix is enumerated); never grant to `anon` or `public`; never inline `auth.jwt() ->> 'app_role'` (use the helper functions); never bind a generic audit trigger to `storage.objects` (the table rotates frequently — log business events from the consumer story's app code instead).
 
 ## Per-migration checklist
 

@@ -1355,6 +1355,10 @@ export type Database = {
         Args: { p_insurance_id: string }
         Returns: undefined
       }
+      storage_first_segment_is_uuid: {
+        Args: { p_name: string }
+        Returns: boolean
+      }
       update_customer_with_primary_address: {
         Args: { p_address: Json; p_customer: Json; p_id: string }
         Returns: string

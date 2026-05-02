@@ -17,6 +17,11 @@ import { logEdgeError } from "../_shared/error-logger.ts";
 const DEFAULT_TOKEN_URL =
   "https://auth.bexio.com/realms/bexio/protocol/openid-connect/token";
 
+// Sane upper bound on bexio access-token lifetime (30 days). Guards against
+// malformed `expires_in` from a compromised proxy or bexio returning an
+// absurd value, which would otherwise produce `Invalid Date`.
+const MAX_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 30;
+
 Deno.serve(async (req: Request): Promise<Response> => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -24,21 +29,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const clientSecret = Deno.env.get("BEXIO_CLIENT_SECRET");
   const redirectUri = Deno.env.get("BEXIO_REDIRECT_URI");
   const tokenUrl = Deno.env.get("BEXIO_TOKEN_URL") ?? DEFAULT_TOKEN_URL;
+  const appUrl =
+    Deno.env.get("NEXT_PUBLIC_APP_URL") ?? Deno.env.get("APP_PUBLIC_URL");
 
   if (!supabaseUrl || !serviceKey) {
-    return errorResponse(
-      "config",
-      "SUPABASE_* env vars missing.",
-      500,
-      origin(req),
-    );
+    return errorResponse("config", "SUPABASE_* env vars missing.", 500);
   }
   if (!clientId || !clientSecret || !redirectUri) {
     return errorResponse(
       "config",
       "BEXIO_CLIENT_ID / SECRET / REDIRECT_URI missing.",
       500,
-      origin(req),
+    );
+  }
+  if (!appUrl) {
+    // Fail loudly rather than fall back to a hardcoded preview hostname.
+    return errorResponse(
+      "config_missing",
+      "NEXT_PUBLIC_APP_URL or APP_PUBLIC_URL must be set.",
+      500,
     );
   }
 
@@ -59,17 +68,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
         source: "bexio-auth",
         message: `bexio OAuth consent denied / aborted: ${bexioError}`,
         details: {
-          actor_system: "other",
           bexio_error: bexioError,
           hint: "oauth_consent_denied_or_aborted",
         },
       },
       adminClient,
     );
-    return redirect(
-      `${frontendOrigin()}/settings/bexio?error=consent`,
-      origin(req),
-    );
+    return redirect(`${appUrl}/settings/bexio?error=consent`);
   }
 
   if (!code || !state) {
@@ -77,14 +82,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       "missing_params",
       "code or state query param missing.",
       400,
-      origin(req),
     );
   }
 
   // 1. Verify state row.
   const { data: stateRows, error: stateErr } = await adminClient
     .from("bexio_oauth_states")
-    .select("state, environment, used_at, expires_at")
+    .select("state, environment, used_at, expires_at, created_by")
     .eq("state", state)
     .limit(1);
 
@@ -95,7 +99,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         severity: "error",
         source: "bexio-auth",
         message: `state lookup failed: ${stateErr.message}`,
-        details: { actor_system: "other", code: stateErr.code },
+        details: { code: stateErr.code },
       },
       adminClient,
     );
@@ -103,7 +107,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
       "state_lookup_failed",
       "Could not validate OAuth state.",
       500,
-      origin(req),
     );
   }
 
@@ -120,7 +123,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
         source: "bexio-auth",
         message: "bexio OAuth state invalid or expired",
         details: {
-          actor_system: "other",
           reason: "state_invalid_or_expired",
           had_row: !!stateRow,
         },
@@ -131,11 +133,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       "state_invalid_or_expired",
       "OAuth state expired or already used.",
       400,
-      origin(req),
     );
   }
 
   const env = stateRow.environment as "trial" | "production";
+  const initiatedBy = (stateRow as { created_by?: string | null }).created_by ?? null;
 
   // 2. Exchange code for tokens.
   let tokenPayload: TokenPayload;
@@ -157,6 +159,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => "");
+      const oauthCode = extractOAuthErrorCode(text);
       await logEdgeError(
         {
           errorType: "AUTH",
@@ -164,20 +167,33 @@ Deno.serve(async (req: Request): Promise<Response> => {
           source: "bexio-auth",
           message: `bexio token exchange failed ${resp.status}`,
           details: {
-            actor_system: "other",
             http_status: resp.status,
-            body_preview: truncate(text, 200),
+            // Structured-only — no raw body. Matches CLAUDE.md AC14
+            // (Story 1.5) "structured codes + IDs only".
+            oauth_error: oauthCode,
           },
         },
         adminClient,
       );
-      return redirect(
-        `${frontendOrigin()}/settings/bexio?error=exchange_failed`,
-        origin(req),
-      );
+      return redirect(`${appUrl}/settings/bexio?error=exchange_failed`);
     }
 
-    tokenPayload = (await resp.json()) as TokenPayload;
+    const rawJson = (await resp.json().catch(() => null)) as unknown;
+    const validated = validateTokenPayload(rawJson);
+    if (!validated) {
+      await logEdgeError(
+        {
+          errorType: "AUTH",
+          severity: "critical",
+          source: "bexio-auth",
+          message: "bexio token response failed schema validation",
+          details: { reason: "schema_invalid" },
+        },
+        adminClient,
+      );
+      return redirect(`${appUrl}/settings/bexio?error=exchange_failed`);
+    }
+    tokenPayload = validated;
   } catch (err) {
     await logEdgeError(
       {
@@ -187,44 +203,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
         message: `bexio token exchange threw: ${
           err instanceof Error ? err.message : String(err)
         }`,
-        details: { actor_system: "other" },
       },
       adminClient,
     );
-    return redirect(
-      `${frontendOrigin()}/settings/bexio?error=exchange_failed`,
-      origin(req),
-    );
+    return redirect(`${appUrl}/settings/bexio?error=exchange_failed`);
   }
 
-  if (
-    !tokenPayload.access_token ||
-    !tokenPayload.refresh_token ||
-    !tokenPayload.expires_in
-  ) {
-    await logEdgeError(
-      {
-        errorType: "AUTH",
-        severity: "critical",
-        source: "bexio-auth",
-        message: "bexio token response missing required fields",
-        details: {
-          actor_system: "other",
-          has_access: !!tokenPayload.access_token,
-          has_refresh: !!tokenPayload.refresh_token,
-          has_expires: !!tokenPayload.expires_in,
-        },
-      },
-      adminClient,
-    );
-    return redirect(
-      `${frontendOrigin()}/settings/bexio?error=exchange_failed`,
-      origin(req),
-    );
-  }
-
+  // expires_in already validated by validateTokenPayload as a finite,
+  // bounded positive number — safe to multiply.
   const expiresAtIso = new Date(
-    Date.now() + tokenPayload.expires_in * 1000,
+    Date.now() + tokenPayload.expires_in! * 1000,
   ).toISOString();
 
   // 3. Optional: fetch bexio company id.
@@ -264,17 +252,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
         source: "bexio-auth",
         message: "bexio_encrypt_token failed",
         details: {
-          actor_system: "other",
           access_err: encA?.message ?? null,
           refresh_err: encR?.message ?? null,
         },
       },
       adminClient,
     );
-    return redirect(
-      `${frontendOrigin()}/settings/bexio?error=encrypt_failed`,
-      origin(req),
-    );
+    return redirect(`${appUrl}/settings/bexio?error=encrypt_failed`);
   }
 
   const { error: completeErr } = await adminClient.rpc(
@@ -288,6 +272,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       p_scope: tokenPayload.scope ?? null,
       p_environment: env,
       p_bexio_company_id: bexioCompanyId,
+      p_initiated_by: initiatedBy,
     },
   );
 
@@ -299,22 +284,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
         source: "bexio-auth",
         message: `bexio_complete_oauth failed: ${completeErr.message}`,
         details: {
-          actor_system: "other",
           code: completeErr.code,
         },
       },
       adminClient,
     );
-    return redirect(
-      `${frontendOrigin()}/settings/bexio?error=persist_failed`,
-      origin(req),
-    );
+    return redirect(`${appUrl}/settings/bexio?error=persist_failed`);
   }
 
-  return redirect(
-    `${frontendOrigin()}/settings/bexio?connected=1`,
-    origin(req),
-  );
+  return redirect(`${appUrl}/settings/bexio?connected=1`);
 });
 
 interface TokenPayload {
@@ -325,23 +303,7 @@ interface TokenPayload {
   scope?: string;
 }
 
-function origin(req: Request): string {
-  return req.headers.get("Origin") ?? new URL(req.url).origin;
-}
-
-function frontendOrigin(): string {
-  // App lives on Vercel Frankfurt. Source of truth for the public URL is
-  // NEXT_PUBLIC_APP_URL (set as Edge Function secret); fallback is the bexio
-  // referrer's expected app origin from request — but we cannot trust that.
-  return (
-    Deno.env.get("NEXT_PUBLIC_APP_URL") ??
-    Deno.env.get("APP_PUBLIC_URL") ??
-    "https://heimelig-os.vercel.app"
-  );
-}
-
-function redirect(target: string, _ignored?: unknown): Response {
-  void _ignored;
+function redirect(target: string): Response {
   return new Response(null, {
     status: 303,
     headers: {
@@ -354,15 +316,53 @@ function errorResponse(
   code: string,
   message: string,
   status: number,
-  _ignored?: unknown,
 ): Response {
-  void _ignored;
   return new Response(JSON.stringify({ error: code, message }), {
     status,
     headers: { "Content-Type": "application/json" },
   });
 }
 
-function truncate(value: string, max: number): string {
-  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+// Validate the bexio token-endpoint response against our expected shape:
+// access_token + refresh_token must be non-empty strings; expires_in must be
+// a finite, positive integer below MAX_EXPIRES_IN_SECONDS.
+function validateTokenPayload(raw: unknown): TokenPayload | null {
+  if (!raw || typeof raw !== "object") return null;
+  const v = raw as Record<string, unknown>;
+  if (typeof v.access_token !== "string" || v.access_token.length === 0) return null;
+  if (typeof v.refresh_token !== "string" || v.refresh_token.length === 0) return null;
+  if (typeof v.expires_in !== "number") return null;
+  if (
+    !Number.isFinite(v.expires_in) ||
+    v.expires_in <= 0 ||
+    v.expires_in > MAX_EXPIRES_IN_SECONDS
+  ) {
+    return null;
+  }
+  if (v.token_type !== undefined && typeof v.token_type !== "string") return null;
+  if (v.scope !== undefined && v.scope !== null && typeof v.scope !== "string") return null;
+  return {
+    access_token: v.access_token,
+    refresh_token: v.refresh_token,
+    expires_in: v.expires_in,
+    token_type: typeof v.token_type === "string" ? v.token_type : undefined,
+    scope: typeof v.scope === "string" ? v.scope : undefined,
+  };
+}
+
+// Extract OAuth `error` code from a token-endpoint error body (RFC 6749 §5.2)
+// without leaking the body into error_log. Returns the code (e.g.
+// `invalid_grant`) if parseable, else null.
+function extractOAuthErrorCode(body: string): string | null {
+  if (!body) return null;
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    if (typeof parsed.error === "string") {
+      const code = parsed.error.trim();
+      if (/^[A-Za-z0-9_-]{1,40}$/.test(code)) return code;
+    }
+  } catch {
+    /* not JSON */
+  }
+  return null;
 }

@@ -261,8 +261,9 @@ begin
       v_caught := sqlstate;
       reset role; reset request.jwt.claims;
       -- A 42501-style result is also acceptable for SELECT under RLS — Postgres
-      -- normally returns 0 rows rather than raising.
-      if v_caught not in ('42501','42P17') then
+      -- normally returns 0 rows rather than raising. 42P17 (recursive RLS) is
+      -- a real bug, not an acceptable outcome.
+      if v_caught <> '42501' then
         insert into smoke_results values ('D-' || r.role_key,
           'FAIL', format('select unexpected sqlstate=%s', v_caught));
         v_all_pass := false;
@@ -286,7 +287,9 @@ begin
     exception when others then
       v_caught := sqlstate;
       reset role; reset request.jwt.claims;
-      if v_caught in ('42501','42P17') or v_caught like '4%' or v_caught like 'PR%' then
+      -- Only RLS deny (42501) is a valid PASS — anything else (42P17 recursive
+      -- RLS, integrity errors, generic 4xxxx) indicates a real bug.
+      if v_caught = '42501' then
         insert into smoke_results values ('D-' || r.role_key, 'PASS',
           format('select=0, insert=%s', v_caught));
       else
@@ -511,7 +514,7 @@ begin
     exception when others then
       v_caught := sqlstate;
       reset role; reset request.jwt.claims;
-      if v_caught in ('42501','42P17') or v_caught like '4%' then
+      if v_caught = '42501' then
         v_pass := true;
       end if;
     end;

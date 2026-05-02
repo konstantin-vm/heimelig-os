@@ -38,7 +38,8 @@ NNNNN_description.sql
 | `00030`        | Story 2.1.1 review fix — replay-safety re-emit of `update_customer_with_primary_address()` (00029 had stripped the iv columns; on numerical replay this restores them) + btrim defense on `iv_dossier_number` for direct API callers (applied 2026-04-29). |
 | `00031`        | Story 2.3 review fixes — `set_primary_customer_insurance` `is_active` guard (rejects soft-deleted targets P0002); defensive cleanup of duplicate primaries before re-asserting `idx_customer_insurance_primary_unique`; back-fill is_primary=false on inactive rows (aligns to soft-delete-clears-is_primary contract) (applied 2026-04-29). |
 | `00032`        | Story 1.6 review fix — re-declare `storage_first_segment_is_uuid()` as `STABLE` (was `IMMUTABLE` in 00019). Wraps `storage.foldername()` which is upstream `STABLE`; the original `IMMUTABLE` declaration was a contract violation that allowed planner constant-folding across rows. |
-| `00032+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
+| `00033`        | Story 1.7 review fixes — `bexio_oauth_states.created_by` (admin attribution); `bexio_complete_oauth` advisory lock + `p_initiated_by` propagating into `bexio_credentials.created_by`; cron purge predicate switched from `created_at` to `used_at OR expires_at`; `bexio_set_credentials_revoked` audit on lost race; `bexio_decrypt_token` empty-string handling; vault-secret error messages distinguish "not found" vs "null payload"; `bexio_credentials_status_for_admin` `LIMIT 1` defense-in-depth; consolidated `bexio_credentials_status_label()` helper used by both view + admin function; stronger comment on the deny-all view; `bexio_get_active_credential_decrypted` returns `created_at` (so the Edge Function can anchor proactive refresh on creation when `last_refreshed_at IS NULL`). |
+| `00034+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
 
 ## Coordination protocol
 

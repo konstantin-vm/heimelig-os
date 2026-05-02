@@ -34,9 +34,9 @@ Future Epic-6 modules (e.g., `bexio-invoice-helpers.ts`) live alongside these.
 
 | Function | Trigger | Authorization |
 |---|---|---|
-| `bexio-oauth-init` | Server Action `connectBexioAction` (admin-only Settings page) | Verifies caller's JWT `app_role = 'admin'`. Generates 32-byte state, persists in `bexio_oauth_states`, returns `{ authorize_url }`. (Story 1.7 AC6) |
-| `bexio-oauth-callback` | bexio redirect target | Public endpoint by design — bexio doesn't carry a Supabase JWT. Validates `state` row (FOR UPDATE + used_at IS NULL + not expired), exchanges `code` for tokens at the bexio token endpoint, encrypts via `bexio_encrypt_token` RPC, persists atomically via `bexio_complete_oauth` RPC. 303-redirects to `/settings/bexio?connected=1` or `?error=...`. Deployed with `--no-verify-jwt`. (Story 1.7 AC7) |
-| `bexio-health` | Manual click on the Settings page | Verifies caller's JWT `app_role = 'admin'`. Issues a cheap GET against `/3.0/company` via the shared `bexio-client.ts`. Returns `{ ok, environment, latency_ms }` or `{ ok: false, code, message, latency_ms }`. (Story 1.7 AC13) |
+| `bexio-oauth-init` | Server Action `connectBexioAction` (admin-only Settings page) | Verifies caller's JWT `app_role = 'admin'`. Reads `env` from JSON body (`{"env":"trial"\|"production"}`; query-string `?env=` is accepted as legacy fallback). Generates 32-byte state, persists in `bexio_oauth_states` with `created_by = caller`, returns `{ authorize_url }`. (Story 1.7 AC6) |
+| `bexio-oauth-callback` | bexio redirect target | Public endpoint by design — bexio doesn't carry a Supabase JWT. Validates `state` row (FOR UPDATE + used_at IS NULL + not expired), exchanges `code` for tokens at the bexio token endpoint, encrypts via `bexio_encrypt_token` RPC, persists atomically via `bexio_complete_oauth` RPC (advisory-locked, propagates `bexio_oauth_states.created_by` into `bexio_credentials.created_by`). 303-redirects to `${NEXT_PUBLIC_APP_URL}/settings/bexio?connected=1` or `?error=...`. Refuses to start without `NEXT_PUBLIC_APP_URL` / `APP_PUBLIC_URL`. Deployed with `--no-verify-jwt`. (Story 1.7 AC7) |
+| `bexio-health` | Manual click on the Settings page | Verifies caller's JWT `app_role = 'admin'`. Issues a cheap GET against `/3.0/company` via the shared `bexio-client.ts`. Returns `{ ok, environment, expires_at, status_label, latency_ms }` or `{ ok: false, code, message, latency_ms }`. Logs typed errors (`auth_revoked`, `rate_limit`, `bexio_<status>`, `unknown`) to `error_log`. (Story 1.7 AC13) |
 
 Future Epic-6 functions (`bexio-billing-run`, `bexio-payment-sync`, `bexio-contact-sync`, `bexio-dunning-sync`, `bexio-invoice-create`, `bexio-invoice-send`) will share `_shared/bexio-client.ts` and `_shared/error-logger.ts`.
 
@@ -54,7 +54,7 @@ Set via `npx supabase secrets set <KEY>=<value>` (the Cloud project, not your lo
 | `BEXIO_AUTHORIZE_URL` | Default: `https://auth.bexio.com/realms/bexio/protocol/openid-connect/auth` |
 | `BEXIO_TOKEN_URL` | Default: `https://auth.bexio.com/realms/bexio/protocol/openid-connect/token` |
 | `BEXIO_SCOPES` | Default: `openid profile offline_access contact_show contact_edit kb_invoice_show kb_invoice_edit`. **`offline_access` is mandatory** — without it bexio does not issue a refresh token. |
-| `NEXT_PUBLIC_APP_URL` | (Optional) Public frontend URL the OAuth callback 303-redirects back to. Defaults to `https://heimelig-os.vercel.app`. |
+| `NEXT_PUBLIC_APP_URL` | **Required.** Public frontend URL the OAuth callback 303-redirects back to. The callback refuses to start without it (`error=config_missing`). `APP_PUBLIC_URL` is an accepted alias. |
 
 **Vault secret** (database-side, not a Function secret): `bexio_token_key` — see migrations README §"bexio-credentials encryption" for the one-time setup SQL.
 

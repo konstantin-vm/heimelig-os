@@ -4,7 +4,7 @@
 // Mirrors the shape of heimelig-os/lib/utils/error-log.ts but is built for
 // Deno + Supabase Edge Functions:
 //   * Takes a service-role admin client (no next/headers coupling).
-//   * Defaults `details.actor_system = 'bexio'` if not provided.
+//   * Defaults `details.actor_system = 'bexio'` (callers can override).
 //   * Best-effort: never throws. RPC failure → returns { ok: false } and
 //     last-resort console.error (the dedicated logger cannot call itself).
 //
@@ -69,7 +69,7 @@ export async function logEdgeError(
 
   const baseDetails = args.details ?? {};
   const enriched = {
-    actor_system: "other",
+    actor_system: "bexio",
     ...baseDetails,
   };
 

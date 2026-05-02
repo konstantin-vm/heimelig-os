@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { logError } from "@/lib/utils/error-log";
 import {
   bexioHealthResponseSchema,
   type BexioHealthResponse,
@@ -85,6 +86,16 @@ export function BexioStatusCard({ status, flash }: BexioStatusCardProps) {
           code: "invoke_failed",
           message: error.message,
         });
+        await logError(
+          {
+            errorType: "EDGE_FUNCTION",
+            severity: "error",
+            source: "settings-bexio",
+            message: `bexio-health invoke failed: ${error.message}`,
+            details: { code: "invoke_failed" },
+          },
+          supabase,
+        );
         return;
       }
       const parsed = bexioHealthResponseSchema.safeParse(data);
@@ -94,6 +105,16 @@ export function BexioStatusCard({ status, flash }: BexioStatusCardProps) {
           code: "invalid_response",
           message: "Antwort konnte nicht ausgewertet werden.",
         });
+        await logError(
+          {
+            errorType: "VALIDATION",
+            severity: "warning",
+            source: "settings-bexio",
+            message: "bexio-health response failed schema validation",
+            details: { code: "invalid_response" },
+          },
+          supabase,
+        );
         return;
       }
       setHealthResult(parsed.data);
@@ -157,13 +178,26 @@ export function BexioStatusCard({ status, flash }: BexioStatusCardProps) {
 
           <div className="flex flex-wrap items-center gap-3">
             {status ? (
-              <Button
-                variant="default"
-                disabled={pending}
-                onClick={() => onConnect(env)}
-              >
-                {pending ? "Wird gestartet…" : "Neu verbinden"}
-              </Button>
+              <>
+                <Button
+                  variant="default"
+                  disabled={pending}
+                  onClick={() => onConnect(env)}
+                >
+                  {pending
+                    ? "Wird gestartet…"
+                    : `Neu verbinden (${env === "production" ? "Produktiv" : "Trial"})`}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() =>
+                    onConnect(env === "production" ? "trial" : "production")
+                  }
+                >
+                  Wechsel zu {env === "production" ? "Trial" : "Produktiv"}
+                </Button>
+              </>
             ) : (
               <>
                 <Button
@@ -195,7 +229,7 @@ export function BexioStatusCard({ status, flash }: BexioStatusCardProps) {
             <Alert variant={healthResult.ok ? "default" : "destructive"}>
               <AlertDescription>
                 {healthResult.ok
-                  ? `OK · ${healthResult.environment} · ${healthResult.latency_ms} ms`
+                  ? `OK · ${healthResult.environment} · ${healthResult.status_label} · ${healthResult.latency_ms} ms`
                   : `${healthResult.code}: ${healthResult.message}`}
               </AlertDescription>
             </Alert>

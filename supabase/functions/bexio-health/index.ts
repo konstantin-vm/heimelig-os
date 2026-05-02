@@ -20,11 +20,20 @@ import {
   getBexioClient,
 } from "../_shared/bexio-client.ts";
 
+// CORS: restrict to the configured app origin. `*` is permissive for a
+// non-credentialed request, but this Edge Function expects a Bearer JWT and
+// a custom client could send it from any origin — pin to NEXT_PUBLIC_APP_URL.
+const ALLOWED_ORIGIN =
+  Deno.env.get("NEXT_PUBLIC_APP_URL") ??
+  Deno.env.get("APP_PUBLIC_URL") ??
+  "*";
+
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  Vary: "Origin",
 };
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -89,8 +98,30 @@ Deno.serve(async (req: Request): Promise<Response> => {
     });
     const latencyMs = Math.round(performance.now() - start);
 
+    // Read the active credential expires_at for the AC13 response shape
+    // (token-free read via service-role).
+    const { data: credRows } = await adminClient
+      .from("bexio_credentials")
+      .select("expires_at")
+      .eq("is_active", true)
+      .limit(1);
+    const credExpiresAt = (credRows ?? [])[0]?.expires_at as
+      | string
+      | undefined;
+    const statusLabel = computeStatusLabel(credExpiresAt ?? null);
+
     if (!resp.ok) {
       const text = await resp.text().catch(() => "");
+      await logEdgeError(
+        {
+          errorType: "BEXIO_API",
+          severity: "warning",
+          source: "bexio-health",
+          message: `bexio /3.0/company returned ${resp.status}`,
+          details: { http_status: resp.status },
+        },
+        adminClient,
+      );
       return jsonResponse(
         {
           ok: false,
@@ -112,6 +143,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       {
         ok: true,
         environment: client.environment,
+        expires_at: credExpiresAt ?? null,
+        status_label: statusLabel,
         latency_ms: latencyMs,
       },
       200,
@@ -120,6 +153,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const latencyMs = Math.round(performance.now() - start);
 
     if (err instanceof BexioAuthRevokedError) {
+      await logEdgeError(
+        {
+          errorType: "AUTH",
+          severity: "warning",
+          source: "bexio-health",
+          message: "bexio connection revoked at health probe",
+          details: { code: "auth_revoked" },
+        },
+        adminClient,
+      );
       return jsonResponse(
         {
           ok: false,
@@ -131,6 +174,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
       );
     }
     if (err instanceof BexioRateLimitError) {
+      await logEdgeError(
+        {
+          errorType: "BEXIO_API",
+          severity: "warning",
+          source: "bexio-health",
+          message: "bexio rate limit exhausted at health probe",
+          details: { code: "rate_limit", attempts: err.attempts },
+        },
+        adminClient,
+      );
       return jsonResponse(
         {
           ok: false,
@@ -142,6 +195,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
       );
     }
     if (err instanceof BexioServerError) {
+      await logEdgeError(
+        {
+          errorType: "BEXIO_API",
+          severity: "error",
+          source: "bexio-health",
+          message: `bexio server error at health probe: ${err.status}`,
+          details: { http_status: err.status },
+        },
+        adminClient,
+      );
       return jsonResponse(
         {
           ok: false,
@@ -159,7 +222,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
         severity: "error",
         source: "bexio-health",
         message: err instanceof Error ? err.message : String(err),
-        details: { actor_system: "other" },
       },
       adminClient,
     );
@@ -188,4 +250,19 @@ function jsonResponse(body: Record<string, unknown>, status: number): Response {
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+// Mirror the SQL `bexio_credentials_status_label` thresholds exactly so the
+// admin UI sees the same label whether it reads the function or the health
+// endpoint. Keep the two definitions in lockstep when changing thresholds.
+function computeStatusLabel(
+  expiresAt: string | null,
+): "valid" | "expiring_soon" | "expired" {
+  if (!expiresAt) return "valid";
+  const now = Date.now();
+  const ms = new Date(expiresAt).getTime();
+  if (Number.isNaN(ms)) return "valid";
+  if (ms <= now) return "expired";
+  if (ms <= now + 5 * 60 * 1000) return "expiring_soon";
+  return "valid";
 }

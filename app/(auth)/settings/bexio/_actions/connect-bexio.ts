@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getSessionRole } from "@/lib/supabase/session";
 import { logError } from "@/lib/utils/error-log";
 import {
   connectBexioActionInputSchema,
@@ -30,9 +31,16 @@ export async function connectBexioAction(
     return { ok: false, message: "Sitzung abgelaufen." };
   }
 
+  // Defense-in-depth role gate: middleware + page already restrict
+  // /settings/bexio to admins. Re-verify here so a non-admin direct POST
+  // gets a clean Forbidden without spamming error_log.
+  if (getSessionRole(claimsData.claims) !== "admin") {
+    return { ok: false, message: "Nicht berechtigt." };
+  }
+
   const { data, error } = await supabase.functions.invoke<{ authorize_url?: string }>(
-    `bexio-oauth-init?env=${parsed.data.env}`,
-    { method: "POST" },
+    "bexio-oauth-init",
+    { method: "POST", body: { env: parsed.data.env } },
   );
 
   if (error || !data?.authorize_url) {
@@ -44,7 +52,6 @@ export async function connectBexioAction(
         message: error?.message ?? "bexio-oauth-init returned empty authorize_url",
         details: {
           env: parsed.data.env,
-          actor_system: "other",
         },
       },
       supabase,

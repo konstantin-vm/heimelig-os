@@ -25,11 +25,20 @@ interface ErrorResponse {
   message: string;
 }
 
+// CORS pinned to NEXT_PUBLIC_APP_URL (defense-in-depth even though the
+// function expects a JWT — a custom client could send the header from any
+// origin).
+const ALLOWED_ORIGIN =
+  Deno.env.get("NEXT_PUBLIC_APP_URL") ??
+  Deno.env.get("APP_PUBLIC_URL") ??
+  "*";
+
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  Vary: "Origin",
 };
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -107,10 +116,26 @@ Deno.serve(async (req: Request): Promise<Response> => {
     );
   }
 
-  // 2. Parse env query param.
-  const url = new URL(req.url);
-  const env = url.searchParams.get("env") ?? "trial";
-  if (env !== "trial" && env !== "production") {
+  // 2. Parse env from JSON body (preferred) or fall back to query param for
+  //    backwards compatibility with the original Server Action contract.
+  let envRaw: string | undefined;
+  try {
+    if (
+      req.headers.get("Content-Type")?.toLowerCase().includes("application/json")
+    ) {
+      const body = (await req.json().catch(() => null)) as
+        | { env?: unknown }
+        | null;
+      if (body && typeof body.env === "string") envRaw = body.env;
+    }
+  } catch {
+    /* ignore */
+  }
+  if (!envRaw) {
+    const url = new URL(req.url);
+    envRaw = url.searchParams.get("env") ?? "trial";
+  }
+  if (envRaw !== "trial" && envRaw !== "production") {
     return jsonResponse(
       {
         error: "invalid_env",
@@ -119,8 +144,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       400,
     );
   }
+  const env: "trial" | "production" = envRaw;
 
-  // 3. Generate state + persist via service-role client.
+  // 3. Generate state + persist via service-role client. Bind the state to
+  //    the initiating admin so the callback (service-role) can populate
+  //    `bexio_credentials.created_by` and so audit/CSRF context is preserved.
   const adminClient = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -131,7 +159,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const { error: insertErr } = await adminClient
     .from("bexio_oauth_states")
-    .insert({ state, environment: env });
+    .insert({ state, environment: env, created_by: userData.user.id });
   if (insertErr) {
     await logEdgeError(
       {

@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { unstable_noStore as noStore } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { BexioStatusCard } from "./_components/bexio-status-card";
@@ -15,6 +16,17 @@ interface PageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
+// Allowlist of OAuth error codes the callback / Edge Functions emit. Anything
+// else is rendered with the generic German fallback to avoid arbitrary text
+// in the URL bar leaking into the UI.
+const KNOWN_ERROR_CODES = new Set([
+  "consent",
+  "exchange_failed",
+  "encrypt_failed",
+  "persist_failed",
+  "state_invalid_or_expired",
+]);
+
 export default function BexioSettingsPage({ searchParams }: PageProps) {
   return (
     <Suspense fallback={<BexioSkeleton />}>
@@ -24,6 +36,12 @@ export default function BexioSettingsPage({ searchParams }: PageProps) {
 }
 
 async function BexioSettingsBody({ searchParams }: PageProps) {
+  // The active credential status is admin-only metadata that must be a fresh
+  // read on every render — never cached at the Vercel edge. Combined with
+  // Next 16 cacheComponents this prevents stale "Nicht verbunden" after a
+  // successful ?connected=1 redirect.
+  noStore();
+
   const supabase = await createClient();
 
   // Defense in depth — middleware already gates /settings/* to admins, but
@@ -39,7 +57,8 @@ async function BexioSettingsBody({ searchParams }: PageProps) {
     if (params.connected === "1") return { type: "connected" as const };
     const errParam = params.error;
     if (typeof errParam === "string" && errParam.length > 0) {
-      return { type: "error" as const, code: errParam };
+      const code = KNOWN_ERROR_CODES.has(errParam) ? errParam : "unknown";
+      return { type: "error" as const, code };
     }
     return null;
   })();
@@ -56,7 +75,7 @@ async function BexioSettingsBody({ searchParams }: PageProps) {
         severity: "error",
         source: "settings-bexio",
         message: `bexio_credentials_status_for_admin failed: ${error.message}`,
-        details: { actor_system: "other", code: error.code ?? null },
+        details: { code: error.code ?? null },
       },
       supabase,
     );
@@ -71,7 +90,6 @@ async function BexioSettingsBody({ searchParams }: PageProps) {
           severity: "warning",
           source: "settings-bexio",
           message: "bexio_credentials_status row failed schema validation",
-          details: { actor_system: "other" },
         },
         supabase,
       );

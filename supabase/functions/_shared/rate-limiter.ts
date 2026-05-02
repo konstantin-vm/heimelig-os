@@ -18,6 +18,9 @@
 
 const BACKOFF_MS = [1_000, 4_000, 16_000] as const;
 const DEFAULT_MAX_RETRIES = 3;
+// Cap server-hint backoff so a misbehaving upstream cannot hold an Edge
+// Function past its execution timeout.
+const SERVER_HINT_CAP_MS = 120_000;
 
 export class BexioRateLimitError extends Error {
   readonly code = "BEXIO_RATE_LIMIT" as const;
@@ -47,8 +50,8 @@ export async function withRateLimit(
     if (response.status !== 429) {
       // Soft-warn when the budget is empty even though the call succeeded —
       // useful for log-driven observability later (Epic 6).
-      const remaining = response.headers.get("RateLimit-Remaining");
-      if (remaining === "0") {
+      const remainingNum = parseRemaining(response.headers.get("RateLimit-Remaining"));
+      if (remainingNum === 0) {
         const reset = response.headers.get("RateLimit-Reset");
         console.warn(
           `[rate-limiter] RateLimit-Remaining=0 (Reset=${reset ?? "n/a"}); next call may 429`,
@@ -65,6 +68,11 @@ export async function withRateLimit(
       );
     }
 
+    // Honor server hints (Retry-After per RFC 6585; RateLimit-Reset per the
+    // current draft) and pick max(scheduledBackoff, serverHint) so we never
+    // retry sooner than the server asked for.
+    const serverHintMs = readServerHintMs(response.headers);
+
     // Drain the body so the connection can be reused.
     try {
       await response.body?.cancel();
@@ -72,10 +80,52 @@ export async function withRateLimit(
       /* ignore */
     }
 
-    const sleepMs = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)];
+    const scheduledMs = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)];
+    const sleepMs = Math.max(scheduledMs, serverHintMs ?? 0);
     await sleep(sleepMs);
     attempt += 1;
   }
+}
+
+function parseRemaining(header: string | null): number | null {
+  if (header === null) return null;
+  const trimmed = header.trim();
+  if (trimmed === "") return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
+function readServerHintMs(headers: Headers): number | null {
+  // Retry-After: delta-seconds | HTTP-date.
+  const retryAfter = headers.get("Retry-After");
+  if (retryAfter !== null) {
+    const trimmed = retryAfter.trim();
+    const seconds = Number(trimmed);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1000, SERVER_HINT_CAP_MS);
+    }
+    const date = new Date(trimmed).getTime();
+    if (!Number.isNaN(date)) {
+      return Math.max(0, Math.min(date - Date.now(), SERVER_HINT_CAP_MS));
+    }
+  }
+  // RateLimit-Reset: per the IETF draft, this is delta-seconds until the
+  // window resets (some servers emit a unix timestamp; treat large values
+  // as such).
+  const reset = headers.get("RateLimit-Reset");
+  if (reset !== null) {
+    const trimmed = reset.trim();
+    const value = Number(trimmed);
+    if (Number.isFinite(value) && value >= 0) {
+      // > 1e9 = looks like a unix timestamp (seconds since epoch).
+      const ms =
+        value > 1_000_000_000
+          ? Math.max(0, value * 1000 - Date.now())
+          : value * 1000;
+      return Math.min(ms, SERVER_HINT_CAP_MS);
+    }
+  }
+  return null;
 }
 
 function sleep(ms: number): Promise<void> {

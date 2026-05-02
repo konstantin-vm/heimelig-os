@@ -81,6 +81,7 @@ interface ActiveCredentialRow {
   last_refreshed_at: string | null;
   refresh_count: number;
   environment: "trial" | "production";
+  created_at: string;
 }
 
 export interface BexioClient {
@@ -101,6 +102,12 @@ export interface GetBexioClientOptions {
 }
 
 const DEFAULT_BASE_URL = "https://api.bexio.com";
+
+// Sane upper bound on bexio access-token lifetime (30 days).
+// Guards against malformed `expires_in` from a compromised proxy or the auth
+// server returning an absurd value, which would otherwise produce
+// `Invalid Date` and silently break refresh logic.
+const MAX_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 30;
 
 export async function getBexioClient(
   supabaseAdmin: SupabaseClient,
@@ -132,7 +139,13 @@ export async function getBexioClient(
       : `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 
     const headers = new Headers(init?.headers);
-    headers.set("Authorization", `${state.current.token_type} ${state.current.access_token}`);
+    // bexio only issues Bearer tokens; defense-in-depth allowlist guards
+    // against header injection via a malformed token_type echo.
+    const tokenType =
+      state.current.token_type.toLowerCase() === "bearer"
+        ? "Bearer"
+        : "Bearer";
+    headers.set("Authorization", `${tokenType} ${state.current.access_token}`);
     if (!headers.has("Accept")) {
       headers.set("Accept", "application/json");
     }
@@ -197,18 +210,19 @@ export async function getBexioClient(
       }
 
       if (response.status >= 500) {
+        // 1 retry on transient 5xx. Honor Retry-After when present, else use
+        // a small fixed delay (AC8 §6).
         const retryAfter = parseRetryAfter(
           response.headers.get("Retry-After"),
         );
-        if (retryAfter !== null) {
-          try {
-            await response.body?.cancel();
-          } catch {
-            /* ignore */
-          }
-          await sleep(retryAfter);
-          response = await withRateLimit(() => rawRequest(path, init));
+        try {
+          await response.body?.cancel();
+        } catch {
+          /* ignore */
         }
+        await sleep(retryAfter ?? 1_000);
+        response = await withRateLimit(() => rawRequest(path, init));
+
         if (response.status >= 500) {
           // Surface — caller decides whether to enqueue / fail.
           throw new BexioServerError(
@@ -252,12 +266,11 @@ function shouldRefreshProactively(cred: ActiveCredentialRow): boolean {
     return true;
   }
 
-  // 80 %-of-lifetime check needs an anchor. Use last_refreshed_at when known,
+  // 80 %-of-lifetime check needs an anchor: last_refreshed_at when known,
   // else created_at. expires_at - anchor = full lifetime.
-  if (!cred.last_refreshed_at) {
-    return false;
-  }
-  const anchorMs = new Date(cred.last_refreshed_at).getTime();
+  const anchorIso = cred.last_refreshed_at ?? cred.created_at;
+  if (!anchorIso) return false;
+  const anchorMs = new Date(anchorIso).getTime();
   if (Number.isNaN(anchorMs)) return false;
   const lifetime = expiresMs - anchorMs;
   if (lifetime <= 0) return true;
@@ -305,14 +318,15 @@ async function refreshCredential(
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
+    const oauthCode = extractOAuthErrorCode(text);
     if (resp.status === 400 || resp.status === 401) {
       // invalid_grant — refresh token revoked / expired. Surface as auth-revoked.
       throw new BexioAuthRevokedError(
-        `bexio refresh failed ${resp.status}: ${truncate(text, 200)}`,
+        `bexio refresh failed ${resp.status} (${oauthCode ?? "unknown"})`,
       );
     }
     throw new BexioServerError(
-      `bexio refresh ${resp.status}: ${truncate(text, 200)}`,
+      `bexio refresh ${resp.status} (${oauthCode ?? "unknown"})`,
       resp.status,
     );
   }
@@ -337,6 +351,16 @@ async function refreshCredential(
   if (!payload.access_token || !payload.refresh_token || !payload.expires_in) {
     throw new BexioNetworkError(
       "bexio refresh response missing access_token / refresh_token / expires_in",
+    );
+  }
+
+  if (
+    !Number.isFinite(payload.expires_in) ||
+    payload.expires_in <= 0 ||
+    payload.expires_in > MAX_EXPIRES_IN_SECONDS
+  ) {
+    throw new BexioNetworkError(
+      `bexio refresh response expires_in out of range: ${payload.expires_in}`,
     );
   }
 
@@ -401,19 +425,20 @@ async function handleRefreshFailure(
   err: unknown,
 ): Promise<void> {
   const isAuthRevoked = err instanceof BexioAuthRevokedError;
+  const isNetwork = err instanceof BexioNetworkError;
   const message =
     err instanceof Error ? err.message : `bexio refresh failed: ${String(err)}`;
 
   await logEdgeError(
     {
       errorType: "AUTH",
-      severity: "critical",
+      severity: isAuthRevoked ? "critical" : "error",
       source: "bexio-auth",
       message: truncate(message, 500),
       details: {
-        actor_system: "other",
-        recovery: "reconnect_required",
+        recovery: isAuthRevoked ? "reconnect_required" : "transient_retry",
         is_auth_revoked: isAuthRevoked,
+        is_transient: isNetwork,
       },
       entity: "bexio_credentials",
       entityId: credentialId,
@@ -421,18 +446,50 @@ async function handleRefreshFailure(
     supabaseAdmin,
   );
 
-  // Best-effort flip to is_active=false + audit. A failure here must not
-  // mask the original refresh error.
-  try {
-    await supabaseAdmin.rpc("bexio_set_credentials_revoked", {
-      p_credential_id: credentialId,
-      p_reason: truncate(message, 200),
-    });
-  } catch (revokeErr) {
-    console.error(
-      "[bexio-client] revoke RPC failed:",
-      revokeErr instanceof Error ? revokeErr.message : String(revokeErr),
-    );
+  // Only flip is_active=false when bexio actually rejected the refresh
+  // (BexioAuthRevokedError). Transient network/server errors must NOT force a
+  // reconnect — they will be retried on the next invocation.
+  if (!isAuthRevoked) return;
+
+  // Best-effort revoke with one retry on transient failure. A failure here
+  // must not mask the original refresh error.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const { error } = await supabaseAdmin.rpc("bexio_set_credentials_revoked", {
+        p_credential_id: credentialId,
+        p_reason: truncate(message, 200),
+      });
+      if (!error) return;
+      if (attempt === 0) {
+        await sleep(250);
+        continue;
+      }
+      await logEdgeError(
+        {
+          errorType: "AUTH",
+          severity: "critical",
+          source: "bexio-auth",
+          message: `revoke RPC failed: ${error.message}`,
+          details: { recovery_pending: true, code: error.code ?? null },
+          entity: "bexio_credentials",
+          entityId: credentialId,
+        },
+        supabaseAdmin,
+      );
+      return;
+    } catch (revokeErr) {
+      if (attempt === 0) {
+        await sleep(250);
+        continue;
+      }
+      // Last-resort: structured marker for log-based alerting. CLAUDE.md
+      // permits console.error in the dedicated logger's own fallback chain.
+      console.error(
+        "[CRITICAL] bexio revoke RPC failed twice:",
+        revokeErr instanceof Error ? revokeErr.message : String(revokeErr),
+      );
+      return;
+    }
   }
 }
 
@@ -440,15 +497,36 @@ async function handleRefreshFailure(
 // Helpers.
 // ---------------------------------------------------------------------------
 
+// Extract OAuth `error` code from a token-endpoint error body (RFC 6749 §5.2)
+// without leaking the full body into error_log. Returns the code (e.g.
+// `invalid_grant`) if parseable, else null.
+function extractOAuthErrorCode(body: string): string | null {
+  if (!body) return null;
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    if (typeof parsed.error === "string") {
+      const code = parsed.error.trim();
+      if (/^[A-Za-z0-9_-]{1,40}$/.test(code)) return code;
+    }
+  } catch {
+    /* not JSON */
+  }
+  return null;
+}
+
+// Cap at 120s — long enough to honor reasonable bexio Retry-After hints,
+// short enough to keep an Edge Function under its execution timeout.
+const RETRY_AFTER_CAP_MS = 120_000;
+
 function parseRetryAfter(header: string | null): number | null {
   if (!header) return null;
   const seconds = Number(header);
   if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.min(seconds * 1000, 30_000);
+    return Math.min(seconds * 1000, RETRY_AFTER_CAP_MS);
   }
   const date = new Date(header).getTime();
   if (!Number.isNaN(date)) {
-    return Math.max(0, Math.min(date - Date.now(), 30_000));
+    return Math.max(0, Math.min(date - Date.now(), RETRY_AFTER_CAP_MS));
   }
   return null;
 }

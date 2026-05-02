@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { bexioEnvironmentSchema } from "./bexio-credentials";
+import {
+  bexioEnvironmentSchema,
+  bexioStatusLabelSchema,
+} from "./bexio-credentials";
+import { isoTimestampSchema } from "./common";
 
 // Story 1.7 — input validation for the connectBexio Server Action.
 export const connectBexioActionInputSchema = z.object({
@@ -11,11 +15,15 @@ export type ConnectBexioActionInput = z.infer<
 >;
 
 // Health-check Edge Function response shape (consumed by the
-// /settings/bexio status card).
+// /settings/bexio status card). AC13 contract: success returns
+// expires_at + status_label so the UI can render the same label as the
+// admin function.
 export const bexioHealthResponseSchema = z.discriminatedUnion("ok", [
   z.object({
     ok: z.literal(true),
     environment: bexioEnvironmentSchema,
+    expires_at: isoTimestampSchema.nullable(),
+    status_label: bexioStatusLabelSchema,
     latency_ms: z.number().nonnegative(),
   }),
   z.object({

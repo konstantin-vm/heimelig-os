@@ -29,3 +29,7 @@ export {
   InsuranceTypeBadge,
   type InsuranceTypeBadgeProps,
 } from "./insurance-type-badge";
+export {
+  BexioStatusBadge,
+  type BexioConnectionState,
+} from "./bexio-status-badge";

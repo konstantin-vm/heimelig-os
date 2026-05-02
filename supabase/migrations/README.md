@@ -26,7 +26,8 @@ NNNNN_description.sql
 | `00018`        | Story 1.6 — storage buckets (`medical-certs`, `qr-labels`, `signatures`) with bucket-level MIME / size allowlist (applied 2026-04-29). |
 | `00019`        | Story 1.6 — role-based RLS policies on `storage.objects` for admin / office / warehouse + `storage_first_segment_is_uuid()` helper (applied 2026-04-29). |
 | `00020`        | Story 1.6 reserved (unused). Kept for a potential review fix-up before the slot is released. |
-| `00021–00022`  | Story 1.7 — bexio credentials + OAuth2 plumbing.    |
+| `00021`        | Story 1.7 — `bexio_credentials` + `bexio_oauth_states` + encryption helpers (Vault key `bexio_token_key`) + status view + admin/service-role read functions + `bexio_complete_oauth` + `bexio_record_token_refresh` + `bexio_set_credentials_revoked` + audit trigger binding with token-column suppression + pg_cron purge of oauth_states (applied 2026-04-29). |
+| `00022`        | Story 1.7 fix-up — drop `vault` from the encryption helpers' `search_path`. Calling REVOKEd `bexio_encrypt_token` from a `set role authenticated` context terminates the Supabase Cloud pooler connection because the `authenticated` role lacks USAGE on the locked-down `vault` schema; helper body uses fully-qualified `vault.decrypted_secrets` so the schema doesn't need to be on the search_path (applied 2026-04-29). |
 | `00023`        | Story 2.1 — `customer_number_seq` + `gen_next_customer_number()` + `create_customer_with_primary_address()` (applied 2026-04-28). |
 | `00024`        | Story 2.2 — `set_primary_contact_person(uuid)` RPC (atomic Hauptkontakt promote+demote). |
 | `00025`        | Story 2.1 review fixes — drop `pg_temp` from SECURITY DEFINER search_path; admin/office gate on `gen_next_customer_number()`; explicit NULL/name-vs-type guards on create RPC; new `update_customer_with_primary_address()` for atomic edit (applied 2026-04-28). |
@@ -200,6 +201,36 @@ log_activity(
 - `audit_log` rows are immutable (trigger `audit_log_immutable` rejects UPDATE/DELETE with SQLSTATE 42501).
 
 Every `transition_*` function + every DB function that changes business state must call `log_activity()` at least once. Reviewers reject PRs that mutate state without a `log_activity` call.
+
+## bexio-credentials encryption (Story 1.7)
+
+`public.bexio_credentials` stores `access_token_encrypted` + `refresh_token_encrypted` as base64-encoded `pgp_sym_encrypt` ciphertexts. The AES-256 key lives in **Supabase Vault** under secret name `bexio_token_key`. The key never touches a migration body, audit row, log line, or `pg_dump` output.
+
+**One-time ops setup** (Dashboard SQL editor, NOT a migration):
+
+```sql
+select vault.create_secret(
+  encode(gen_random_bytes(32), 'base64'),
+  'bexio_token_key',
+  'AES-256 key for bexio_credentials.access_token_encrypted / refresh_token_encrypted'
+);
+```
+
+**Helpers** (migrations 00021 + 00022):
+
+| Function | Purpose | GRANT EXECUTE |
+|---|---|---|
+| `public.bexio_encrypt_token(text)` | base64(pgp_sym_encrypt(plaintext, key)) | `service_role` only |
+| `public.bexio_decrypt_token(text)` | inverse | `service_role` only |
+| `public.bexio_credentials_status_for_admin()` | returns 0/1 row of metadata, no token columns | `authenticated` (admin-gated body) |
+| `public.bexio_get_active_credential_decrypted()` | returns the active row with plaintext tokens for Edge Functions | `service_role` only |
+| `public.bexio_complete_oauth(...)` | atomic OAuth completion: state-validate, deactivate-old, insert-new, mark-state-used, audit | `service_role` only |
+| `public.bexio_record_token_refresh(...)` | atomic refresh write + audit | `service_role` only |
+| `public.bexio_set_credentials_revoked(uuid, text)` | atomic flip-to-inactive + audit | `service_role` only |
+
+**Search-path note (00022 fix-up):** the encryption helpers use `set search_path = public, extensions` (NOT `vault`). `vault.decrypted_secrets` is referenced fully-qualified inside the function body. Including `vault` on the search_path causes Supabase Cloud's pooler to terminate the connection when an `authenticated` role hits the EXECUTE-denied check, because `authenticated` lacks USAGE on the locked-down `vault` schema.
+
+**Key rotation** (manual, ops-driven): create `bexio_token_key_v2`, define `_v2` helpers, re-encrypt all rows under v2, drop v1 helpers + secret in a follow-up migration.
 
 ### Generic audit trigger
 

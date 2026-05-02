@@ -197,6 +197,116 @@ export type Database = {
           },
         ]
       }
+      bexio_credentials: {
+        Row: {
+          access_token_encrypted: string
+          bexio_company_id: string | null
+          created_at: string
+          created_by: string | null
+          environment: string
+          expires_at: string
+          id: string
+          is_active: boolean
+          last_refreshed_at: string | null
+          notes: string | null
+          refresh_count: number
+          refresh_token_encrypted: string
+          scope: string | null
+          token_type: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          access_token_encrypted: string
+          bexio_company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          environment?: string
+          expires_at: string
+          id?: string
+          is_active?: boolean
+          last_refreshed_at?: string | null
+          notes?: string | null
+          refresh_count?: number
+          refresh_token_encrypted: string
+          scope?: string | null
+          token_type?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          access_token_encrypted?: string
+          bexio_company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          environment?: string
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          last_refreshed_at?: string | null
+          notes?: string | null
+          refresh_count?: number
+          refresh_token_encrypted?: string
+          scope?: string | null
+          token_type?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bexio_credentials_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bexio_credentials_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bexio_credentials_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bexio_credentials_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bexio_oauth_states: {
+        Row: {
+          created_at: string
+          environment: string
+          expires_at: string
+          state: string
+          used_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          environment: string
+          expires_at?: string
+          state: string
+          used_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          environment?: string
+          expires_at?: string
+          state?: string
+          used_at?: string | null
+        }
+        Relationships: []
+      }
       contact_persons: {
         Row: {
           created_at: string
@@ -1283,6 +1393,89 @@ export type Database = {
       }
     }
     Views: {
+      bexio_credentials_status: {
+        Row: {
+          bexio_company_id: string | null
+          created_at: string | null
+          created_by: string | null
+          environment: string | null
+          expires_at: string | null
+          id: string | null
+          is_active: boolean | null
+          last_refreshed_at: string | null
+          notes: string | null
+          refresh_count: number | null
+          scope: string | null
+          status_label: string | null
+          token_type: string | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          bexio_company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          environment?: string | null
+          expires_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          last_refreshed_at?: string | null
+          notes?: string | null
+          refresh_count?: number | null
+          scope?: string | null
+          status_label?: never
+          token_type?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          bexio_company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          environment?: string | null
+          expires_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          last_refreshed_at?: string | null
+          notes?: string | null
+          refresh_count?: number | null
+          scope?: string | null
+          status_label?: never
+          token_type?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bexio_credentials_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bexio_credentials_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bexio_credentials_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bexio_credentials_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_profiles_self: {
         Row: {
           color_hex: string | null
@@ -1312,6 +1505,70 @@ export type Database = {
       }
     }
     Functions: {
+      bexio_complete_oauth: {
+        Args: {
+          p_access_token_encrypted: string
+          p_bexio_company_id?: string
+          p_environment: string
+          p_expires_at: string
+          p_refresh_token_encrypted: string
+          p_scope: string
+          p_state: string
+          p_token_type: string
+        }
+        Returns: string
+      }
+      bexio_credentials_status_for_admin: {
+        Args: never
+        Returns: {
+          bexio_company_id: string
+          created_at: string
+          created_by: string
+          environment: string
+          expires_at: string
+          id: string
+          is_active: boolean
+          last_refreshed_at: string
+          notes: string
+          refresh_count: number
+          scope: string
+          status_label: string
+          token_type: string
+          updated_at: string
+          updated_by: string
+        }[]
+      }
+      bexio_decrypt_token: { Args: { p_ciphertext: string }; Returns: string }
+      bexio_encrypt_token: { Args: { p_plaintext: string }; Returns: string }
+      bexio_get_active_credential_decrypted: {
+        Args: never
+        Returns: {
+          access_token: string
+          bexio_company_id: string
+          environment: string
+          expires_at: string
+          id: string
+          last_refreshed_at: string
+          refresh_count: number
+          refresh_token: string
+          scope: string
+          token_type: string
+        }[]
+      }
+      bexio_record_token_refresh: {
+        Args: {
+          p_access_token_encrypted: string
+          p_credential_id: string
+          p_expires_at: string
+          p_refresh_token_encrypted: string
+          p_scope?: string
+        }
+        Returns: undefined
+      }
+      bexio_set_credentials_revoked: {
+        Args: { p_credential_id: string; p_reason?: string }
+        Returns: undefined
+      }
       create_customer_with_primary_address: {
         Args: { p_address: Json; p_customer: Json }
         Returns: string

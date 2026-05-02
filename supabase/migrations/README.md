@@ -37,6 +37,7 @@ NNNNN_description.sql
 | `00029`        | Story 2.1 review round 3 fixes — `gen_next_customer_number()` background-caller carve-out (auth.uid() IS NULL bypass); `update_customer_with_primary_address()` ROW_COUNT check + case-when guards on UPSERT DO UPDATE (so absent keys don't null existing data) + customer_number-immutable raise (applied 2026-04-29). |
 | `00030`        | Story 2.1.1 review fix — replay-safety re-emit of `update_customer_with_primary_address()` (00029 had stripped the iv columns; on numerical replay this restores them) + btrim defense on `iv_dossier_number` for direct API callers (applied 2026-04-29). |
 | `00031`        | Story 2.3 review fixes — `set_primary_customer_insurance` `is_active` guard (rejects soft-deleted targets P0002); defensive cleanup of duplicate primaries before re-asserting `idx_customer_insurance_primary_unique`; back-fill is_primary=false on inactive rows (aligns to soft-delete-clears-is_primary contract) (applied 2026-04-29). |
+| `00032`        | Story 1.6 review fix — re-declare `storage_first_segment_is_uuid()` as `STABLE` (was `IMMUTABLE` in 00019). Wraps `storage.foldername()` which is upstream `STABLE`; the original `IMMUTABLE` declaration was a contract violation that allowed planner constant-folding across rows. |
 | `00032+`       | Epic 2–9 stories. Range gets reserved when the story is created.  |
 
 ## Coordination protocol

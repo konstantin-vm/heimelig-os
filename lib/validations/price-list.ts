@@ -70,6 +70,8 @@ export const priceListUpdateSchema = z
   })
   .partial();
 
+export type PriceListNameValue = (typeof priceListNameValues)[number];
+
 export type PriceList = z.infer<typeof priceListSchema>;
 export type PriceListCreate = z.infer<typeof priceListCreateSchema>;
 export type PriceListUpdate = z.infer<typeof priceListUpdateSchema>;

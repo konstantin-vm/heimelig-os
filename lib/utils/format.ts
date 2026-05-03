@@ -1,12 +1,31 @@
 // Display-formatting helpers for customer-domain tables and cards.
 // Story 2.5 — single source for formatPhone() + formatDate() so the list page,
 // profile cards, and badges all render identically.
+// Story 3.1 — adds formatChf() for the article + price-list domains.
 
 const DATE_FMT_DE_CH = new Intl.DateTimeFormat("de-CH", {
   day: "2-digit",
   month: "2-digit",
   year: "numeric",
 });
+
+const CHF_FMT_DE_CH = new Intl.NumberFormat("de-CH", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  useGrouping: true,
+});
+
+/**
+ * Format a CHF amount as `"CHF 1'234.50"` per CLAUDE.md formatter rule.
+ * Returns the em-dash placeholder when the input is null/undefined.
+ * String inputs are parsed; non-finite values render `"—"`.
+ */
+export function formatChf(amount: number | string | null | undefined): string {
+  if (amount === null || amount === undefined || amount === "") return "—";
+  const n = typeof amount === "string" ? Number.parseFloat(amount) : amount;
+  if (!Number.isFinite(n)) return "—";
+  return `CHF ${CHF_FMT_DE_CH.format(n)}`;
+}
 
 /**
  * Format a phone string for display. Swiss-friendly: keeps the leading "+"

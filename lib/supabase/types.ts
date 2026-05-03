@@ -5,7 +5,6 @@ export type Json =
   | null
   | { [key: string]: Json | undefined }
   | Json[]
-
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
@@ -21,10 +20,13 @@ export type Database = {
           category: string
           created_at: string
           created_by: string | null
+          critical_stock: number | null
           description: string | null
           height_cm: number | null
           id: string
           is_active: boolean
+          is_rentable: boolean
+          is_sellable: boolean
           is_serialized: boolean
           length_cm: number | null
           manufacturer: string | null
@@ -39,6 +41,7 @@ export type Database = {
           updated_by: string | null
           variant_label: string | null
           variant_of_id: string | null
+          vat_rate: string
           weight_kg: number | null
           width_cm: number | null
         }
@@ -48,10 +51,13 @@ export type Database = {
           category: string
           created_at?: string
           created_by?: string | null
+          critical_stock?: number | null
           description?: string | null
           height_cm?: number | null
           id?: string
           is_active?: boolean
+          is_rentable?: boolean
+          is_sellable?: boolean
           is_serialized: boolean
           length_cm?: number | null
           manufacturer?: string | null
@@ -66,6 +72,7 @@ export type Database = {
           updated_by?: string | null
           variant_label?: string | null
           variant_of_id?: string | null
+          vat_rate?: string
           weight_kg?: number | null
           width_cm?: number | null
         }
@@ -75,10 +82,13 @@ export type Database = {
           category?: string
           created_at?: string
           created_by?: string | null
+          critical_stock?: number | null
           description?: string | null
           height_cm?: number | null
           id?: string
           is_active?: boolean
+          is_rentable?: boolean
+          is_sellable?: boolean
           is_serialized?: boolean
           length_cm?: number | null
           manufacturer?: string | null
@@ -93,6 +103,7 @@ export type Database = {
           updated_by?: string | null
           variant_label?: string | null
           variant_of_id?: string | null
+          vat_rate?: string
           weight_kg?: number | null
           width_cm?: number | null
         }
@@ -130,6 +141,13 @@ export type Database = {
             columns: ["variant_of_id"]
             isOneToOne: false
             referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "articles_variant_of_id_fkey"
+            columns: ["variant_of_id"]
+            isOneToOne: false
+            referencedRelation: "technician_articles"
             referencedColumns: ["id"]
           },
         ]
@@ -830,6 +848,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "devices_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "technician_articles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "devices_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
@@ -1098,6 +1123,13 @@ export type Database = {
             columns: ["article_id"]
             isOneToOne: false
             referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "price_lists_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "technician_articles"
             referencedColumns: ["id"]
           },
           {
@@ -1497,6 +1529,142 @@ export type Database = {
           },
         ]
       }
+      technician_articles: {
+        Row: {
+          article_number: string | null
+          bexio_article_id: number | null
+          category: string | null
+          created_at: string | null
+          created_by: string | null
+          critical_stock: number | null
+          description: string | null
+          height_cm: number | null
+          id: string | null
+          is_active: boolean | null
+          is_rentable: boolean | null
+          is_sellable: boolean | null
+          is_serialized: boolean | null
+          length_cm: number | null
+          manufacturer: string | null
+          manufacturer_ref: string | null
+          min_stock: number | null
+          name: string | null
+          notes: string | null
+          type: string | null
+          unit: string | null
+          updated_at: string | null
+          updated_by: string | null
+          variant_label: string | null
+          variant_of_id: string | null
+          vat_rate: string | null
+          weight_kg: number | null
+          width_cm: number | null
+        }
+        Insert: {
+          article_number?: string | null
+          bexio_article_id?: number | null
+          category?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          critical_stock?: number | null
+          description?: string | null
+          height_cm?: number | null
+          id?: string | null
+          is_active?: boolean | null
+          is_rentable?: boolean | null
+          is_sellable?: boolean | null
+          is_serialized?: boolean | null
+          length_cm?: number | null
+          manufacturer?: string | null
+          manufacturer_ref?: string | null
+          min_stock?: number | null
+          name?: string | null
+          notes?: string | null
+          type?: string | null
+          unit?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+          variant_label?: string | null
+          variant_of_id?: string | null
+          vat_rate?: string | null
+          weight_kg?: number | null
+          width_cm?: number | null
+        }
+        Update: {
+          article_number?: string | null
+          bexio_article_id?: number | null
+          category?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          critical_stock?: number | null
+          description?: string | null
+          height_cm?: number | null
+          id?: string | null
+          is_active?: boolean | null
+          is_rentable?: boolean | null
+          is_sellable?: boolean | null
+          is_serialized?: boolean | null
+          length_cm?: number | null
+          manufacturer?: string | null
+          manufacturer_ref?: string | null
+          min_stock?: number | null
+          name?: string | null
+          notes?: string | null
+          type?: string | null
+          unit?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+          variant_label?: string | null
+          variant_of_id?: string | null
+          vat_rate?: string | null
+          weight_kg?: number | null
+          width_cm?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "articles_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "articles_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "articles_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "articles_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "articles_variant_of_id_fkey"
+            columns: ["variant_of_id"]
+            isOneToOne: false
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "articles_variant_of_id_fkey"
+            columns: ["variant_of_id"]
+            isOneToOne: false
+            referencedRelation: "technician_articles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_profiles_self: {
         Row: {
           color_hex: string | null
@@ -1604,11 +1772,19 @@ export type Database = {
         Args: { p_customer_id: string }
         Returns: boolean
       }
+      create_article_with_prices: {
+        Args: { p_article: Json; p_prices?: Json }
+        Returns: string
+      }
       create_customer_with_primary_address: {
         Args: { p_address: Json; p_customer: Json }
         Returns: string
       }
       current_app_role: { Args: never; Returns: string }
+      current_price_for_article: {
+        Args: { p_article_id: string; p_list_name: string }
+        Returns: number
+      }
       gen_next_customer_number: { Args: never; Returns: string }
       is_admin: { Args: never; Returns: boolean }
       is_office: { Args: never; Returns: boolean }
@@ -1651,6 +1827,16 @@ export type Database = {
         Args: { p_customer_id: string }
         Returns: boolean
       }
+      replace_price_list_entry: {
+        Args: {
+          p_amount: number
+          p_article_id: string
+          p_list_name: string
+          p_notes?: string
+          p_valid_from?: string
+        }
+        Returns: string
+      }
       search_customer_ids: { Args: { q: string }; Returns: string[] }
       set_default_customer_address: {
         Args: { p_address_id: string }
@@ -1683,11 +1869,8 @@ export type Database = {
     }
   }
 }
-
 type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
-
 type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
-
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
@@ -1716,7 +1899,6 @@ export type Tables<
       ? R
       : never
     : never
-
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
@@ -1741,7 +1923,6 @@ export type TablesInsert<
       ? I
       : never
     : never
-
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
@@ -1766,7 +1947,6 @@ export type TablesUpdate<
       ? U
       : never
     : never
-
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
@@ -1783,7 +1963,6 @@ export type Enums<
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
     ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
     : never
-
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
@@ -1800,7 +1979,6 @@ export type CompositeTypes<
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
     ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
-
 export const Constants = {
   public: {
     Enums: {},

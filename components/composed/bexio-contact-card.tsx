@@ -1,12 +1,19 @@
 "use client";
 
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useCustomer } from "@/lib/queries/customers";
+import {
+  useCustomer,
+  useLatestContactSyncError,
+  useSyncCustomerToBexio,
+} from "@/lib/queries/customers";
 import { formatDate } from "@/lib/utils/format";
 
 import { BexioSyncBadge } from "./bexio-sync-badge";
@@ -17,23 +24,57 @@ export type BexioContactCardProps = {
 };
 
 /**
- * Read-only Sprint-1 view of the customer's bexio contact link. Reads
- * `bexio_contact_id`, `bexio_sync_status`, `bexio_synced_at` from the existing
- * `customers` row (no extra query — pulls from `useCustomer` cache).
+ * Customer-profile bexio card with the four design states from Pencil
+ * S-004 §"Bexio card states":
  *
- * **No resync action** — Story 2.6 owns the bexio sync flow and adds the
- * "Erneut synchronisieren" button + `bexio-contact-sync` Edge Function. When
- * `bexio_contact_id` is null, this card surfaces a muted helper note pointing
- * forward to 2.6.
+ *   * Synced     — green badge + last-synced timestamp, no action.
+ *   * Pending    — orange badge + "Status prüfen" link triggering a
+ *                  manual sync (cron is the safety net; this is the
+ *                  user-facing override).
+ *   * Failed     — red badge + latest error message from `error_log`
+ *                  (entity=customers, source=contact-sync) + "Erneut
+ *                  synchronisieren" button.
+ *   * Never sync — muted badge + "In bexio anlegen" CTA.
+ *
+ * Story 2.6 AC11 / AC12.
  */
 export function BexioContactCard({ customerId }: BexioContactCardProps) {
   const { data: customer, isLoading } = useCustomer(customerId);
+  const status = customer?.bexio_sync_status ?? null;
+  // Review round 1 — `'in_progress'` is the operational reservation flag
+  // added by migration 00041; treat it like `'pending'` from the user's
+  // perspective (Pencil S-004 has 4 states, not 5).
+  const isPending = status === "pending" || status === "in_progress";
+  const isFailed = status === "failed";
+  const latestError = useLatestContactSyncError(isFailed ? customerId : null);
+  const syncMutation = useSyncCustomerToBexio({
+    onSuccess: (result) => {
+      if (result.ok) {
+        toast.success("Mit bexio synchronisiert");
+      } else {
+        toast.error(
+          result.message ||
+            "Synchronisation fehlgeschlagen — siehe Fehlerprotokoll",
+        );
+      }
+    },
+    onError: () => {
+      toast.error(
+        "Synchronisation fehlgeschlagen — siehe Fehlerprotokoll",
+      );
+    },
+  });
+
+  const handleSync = () => {
+    if (syncMutation.isPending) return;
+    syncMutation.mutate(customerId);
+  };
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
         <CardTitle>bexio</CardTitle>
-        <BexioSyncBadge status={customer?.bexio_sync_status ?? null} />
+        <BexioSyncBadge status={status} />
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {isLoading || !customer ? (
@@ -60,11 +101,60 @@ export function BexioContactCard({ customerId }: BexioContactCardProps) {
               }
               emptyPlaceholder="—"
             />
-            {customer.bexio_contact_id === null ? (
-              <p className="rounded-md bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
-                Synchronisierung wird mit Story 2.6 verfügbar.
-              </p>
-            ) : null}
+
+            {/* State-driven affordances — exactly one of the four blocks renders. */}
+            {isPending && (
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <p className="text-xs text-muted-foreground">
+                  Synchronisation läuft (max. 5 Min.)
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSync}
+                  disabled={syncMutation.isPending}
+                >
+                  {syncMutation.isPending ? "Prüfe…" : "Status prüfen"}
+                </Button>
+              </div>
+            )}
+
+            {status === "failed" && (
+              <div className="flex flex-col gap-2 pt-1">
+                <p className="rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+                  {latestError.data?.message ??
+                    "Letzter Synchronisationsversuch fehlgeschlagen."}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSync}
+                  disabled={syncMutation.isPending}
+                  className="self-start"
+                >
+                  {syncMutation.isPending
+                    ? "Synchronisiere…"
+                    : "Erneut synchronisieren"}
+                </Button>
+              </div>
+            )}
+
+            {customer.bexio_contact_id === null && !isPending &&
+              status !== "failed" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleSync}
+                  disabled={syncMutation.isPending}
+                  className="self-start"
+                >
+                  {syncMutation.isPending
+                    ? "Lege an…"
+                    : "In bexio anlegen"}
+                </Button>
+              )}
           </>
         )}
       </CardContent>

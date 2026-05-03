@@ -2138,3 +2138,166 @@ export function useSoftDeleteCustomerAddress(
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Story 2.6 — bexio Contact Synchronization mutation + read.
+// ---------------------------------------------------------------------------
+
+/**
+ * Shape returned by the `bexio-contact-sync` Edge Function on the
+ * single-customer path (POST body `{ customer_id }`).
+ */
+export type BexioSyncResult =
+  | {
+      ok: true;
+      customer_id: string;
+      bexio_contact_id: number;
+      status: "synced";
+      mode: "create" | "update" | "recovery";
+    }
+  | {
+      ok: false;
+      customer_id: string;
+      code: string;
+      message: string;
+    };
+
+/**
+ * Triggers a single-customer bexio contact sync via the Edge Function.
+ * Used by <BexioContactCard> for the "In bexio anlegen" / "Erneut
+ * synchronisieren" / "Status prüfen" buttons (Story 2.6 AC11 / AC12).
+ *
+ * Toast UX:
+ *   * On success → toast.success "Mit bexio synchronisiert".
+ *   * On Edge Function returning `{ ok: false }` → toast.error with the
+ *     German message from the function response.
+ *   * On network/permission failure → throw so the caller's onError fires
+ *     (consumed by the card to render the standard fallback toast).
+ *
+ * Invalidations: `customerKeys.detail(id)` (drives the card re-render via
+ * useCustomer) AND `customerKeys.bexio(id)` (any sub-readers) AND
+ * `["error_log","contact-sync", id]` so a fresh failed sync surfaces in the
+ * <BexioContactCard> Failed-state error message.
+ */
+export function useSyncCustomerToBexio(
+  options?: UseMutationOptions<BexioSyncResult, Error, string>,
+) {
+  const queryClient = useQueryClient();
+  // Review round 1 M14 — explicit pick of safe overrides. The previous
+  // `...options` spread allowed a caller to inject a `mutationFn` (or
+  // override `onSuccess` AFTER the wrapper installed it) and silently
+  // break the sync. Pull only the lifecycle hooks we want callers to
+  // wire — never the function body.
+  const onMutate = options?.onMutate;
+  const onError = options?.onError;
+  const onSettled = options?.onSettled;
+  const userOnSuccess = options?.onSuccess;
+  return useMutation<BexioSyncResult, Error, string>({
+    mutationFn: async (customerId) => {
+      const supabase = createClient();
+      const { data, error } = await supabase.functions.invoke(
+        "bexio-contact-sync",
+        { body: { customer_id: customerId } },
+      );
+      if (error) {
+        // Network / 4xx / 5xx from the Edge Function itself (not a logical
+        // bexio failure — those land in `data.ok === false`).
+        await logError(
+          {
+            errorType: "EDGE_FUNCTION",
+            severity: "error",
+            source: "bexio-contact-sync",
+            message: error.message,
+            details: {
+              customer_id: customerId,
+              operation: "invoke",
+              code: "edge_function_invoke_failed",
+            },
+            entity: "customers",
+            entityId: customerId,
+          },
+          supabase,
+        );
+        throw error;
+      }
+      return data as BexioSyncResult;
+    },
+    onMutate,
+    onError,
+    onSettled,
+    onSuccess: (data, variables, ...rest) => {
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.detail(variables),
+      });
+      queryClient.invalidateQueries({
+        queryKey: customerKeys.bexio(variables),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["error_log", "contact-sync", variables] as const,
+      });
+      return userOnSuccess?.(data, variables, ...rest);
+    },
+  });
+}
+
+/**
+ * Latest error_log row for `entity='customers' AND entity_id=customerId
+ * AND source='contact-sync'`. Surfaced in the Failed state of
+ * <BexioContactCard> (Story 2.6 AC11). Returns null when no failure on
+ * record. RLS allows admin + office SELECT only.
+ */
+export type LatestContactSyncError = {
+  id: string;
+  message: string;
+  severity: "critical" | "error" | "warning" | "info";
+  created_at: string;
+};
+
+export function useLatestContactSyncError(customerId: string | null) {
+  const enabled = customerId !== null && customerId.length > 0;
+  return useQuery({
+    queryKey: enabled
+      ? (["error_log", "contact-sync", customerId] as const)
+      : (["error_log", "contact-sync", "none"] as const),
+    queryFn: enabled
+      ? async (): Promise<LatestContactSyncError | null> => {
+          const supabase = createClient();
+          const { data, error } = await supabase
+            .from("error_log")
+            .select("id, message, severity, created_at")
+            .eq("entity", "customers")
+            .eq("entity_id", customerId)
+            .eq("source", "contact-sync")
+            .in("severity", ["error", "critical"])
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (error) {
+            await logError(
+              {
+                errorType: "DB_FUNCTION",
+                severity: "warning",
+                source: "bexio-contact-card",
+                message: error.message,
+                details: {
+                  customer_id: customerId,
+                  operation: "read_latest_error",
+                  code: error.code ?? null,
+                },
+                entity: "customers",
+                entityId: customerId,
+              },
+              supabase,
+            );
+            // Don't throw — the card has a graceful "no error message
+            // available" fallback. Failed reads must not break the page.
+            return null;
+          }
+          return (data as LatestContactSyncError | null) ?? null;
+        }
+      : skipToken,
+    // 60s staleTime — error messages don't change frequently, and after
+    // a manual sync the mutation invalidates this key explicitly.
+    staleTime: 60_000,
+  });
+}

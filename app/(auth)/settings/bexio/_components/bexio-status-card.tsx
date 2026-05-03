@@ -155,7 +155,23 @@ export function BexioStatusCard({ status, flash }: BexioStatusCardProps) {
                 label="Umgebung"
                 value={status.environment === "production" ? "Produktiv" : "Trial"}
               />
-              <Field label="Läuft ab" value={formatSwiss(status.expires_at)} />
+              {/* Story 1.7 follow-up: bexio's access_token has a 1-hour TTL,
+                   but the shared client refreshes it proactively at 80% of
+                   lifetime. The connection only needs operator attention when
+                   the access_token cannot be refreshed (status_label !==
+                   'valid'). Hiding the "Läuft ab" field on valid prevents
+                   misleading the office user into thinking they must
+                   reconnect every hour. */}
+              {status.status_label !== "valid" ? (
+                <Field
+                  label={
+                    status.status_label === "expired"
+                      ? "Abgelaufen seit"
+                      : "Läuft ab"
+                  }
+                  value={formatSwiss(status.expires_at)}
+                />
+              ) : null}
               <Field
                 label="Letzter Refresh"
                 value={formatSwiss(status.last_refreshed_at)}

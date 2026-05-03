@@ -42,6 +42,7 @@ import { languageValues } from "@/lib/validations/common";
 import {
   useCreateCustomer,
   useCustomer,
+  useSyncCustomerToBexio,
   useUpdateCustomer,
   type CustomerAddressPayload,
 } from "@/lib/queries/customers";
@@ -362,10 +363,39 @@ export function CustomerEditForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchedStreet, watchedStreetNo, watchedZip, watchedCity, watchedCountry]);
 
+  // Story 2.6 — fire-and-forget bexio sync after a successful create or
+  // bexio-relevant update. The mutation's own onSuccess/onError shows the
+  // bexio result toast separately. Customer is saved either way; bexio
+  // sync is best-effort + non-blocking.
+  const bexioSyncMutation = useSyncCustomerToBexio();
+  const triggerBexioSync = (customerId: string) => {
+    bexioSyncMutation.mutate(customerId, {
+      onSuccess: (result) => {
+        if (result.ok) {
+          toast.success("Mit bexio synchronisiert");
+        } else {
+          toast.error(
+            result.message ||
+              "bexio-Synchronisation fehlgeschlagen — siehe Fehlerprotokoll",
+          );
+        }
+      },
+      onError: () => {
+        toast.error(
+          "bexio-Synchronisation fehlgeschlagen — siehe Fehlerprotokoll",
+        );
+      },
+    });
+  };
+
   const createMutation = useCreateCustomer({
-    onSuccess: () => {
+    onSuccess: (newCustomerId) => {
       toast.success("Kunde wurde angelegt.");
       onOpenChange(false);
+      // Fire bexio sync immediately so the user lands on the profile with
+      // a Synced (or Failed) state instead of staring at Pending. Realtime
+      // pickup keeps the card fresh either way.
+      triggerBexioSync(newCustomerId);
     },
     onError: (err) => {
       toast.error("Anlegen fehlgeschlagen", { description: err.message });
@@ -373,9 +403,14 @@ export function CustomerEditForm({
   });
 
   const updateMutation = useUpdateCustomer({
-    onSuccess: () => {
+    onSuccess: (updatedId, variables) => {
       toast.success("Änderungen gespeichert.");
       onOpenChange(false);
+      // Only sync when a bexio-relevant field actually changed (per the
+      // existing BEXIO_RETRIGGER_FIELDS computation upstream).
+      if (variables.bexioRetrigger) {
+        triggerBexioSync(updatedId);
+      }
     },
     onError: (err) => {
       toast.error("Speichern fehlgeschlagen", { description: err.message });

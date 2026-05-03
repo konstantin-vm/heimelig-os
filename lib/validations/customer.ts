@@ -59,6 +59,7 @@ export const acquisitionChannelSchema = z.enum(acquisitionChannelValues);
 
 export const bexioSyncStatusValues = [
   "pending",
+  "in_progress",
   "synced",
   "failed",
   "local_only",

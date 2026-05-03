@@ -628,6 +628,7 @@ export type Database = {
           acquisition_channel: string | null
           addressee_line: string | null
           bexio_contact_id: number | null
+          bexio_sync_started_at: string | null
           bexio_sync_status: string
           bexio_synced_at: string | null
           company_name: string | null
@@ -659,6 +660,7 @@ export type Database = {
           acquisition_channel?: string | null
           addressee_line?: string | null
           bexio_contact_id?: number | null
+          bexio_sync_started_at?: string | null
           bexio_sync_status?: string
           bexio_synced_at?: string | null
           company_name?: string | null
@@ -690,6 +692,7 @@ export type Database = {
           acquisition_channel?: string | null
           addressee_line?: string | null
           bexio_contact_id?: number | null
+          bexio_sync_started_at?: string | null
           bexio_sync_status?: string
           bexio_synced_at?: string | null
           company_name?: string | null
@@ -1593,6 +1596,14 @@ export type Database = {
         Args: { p_credential_id: string; p_reason?: string }
         Returns: undefined
       }
+      claim_pending_bexio_contact_syncs: {
+        Args: { p_limit?: number }
+        Returns: string[]
+      }
+      claim_single_for_bexio_sync: {
+        Args: { p_customer_id: string }
+        Returns: boolean
+      }
       create_customer_with_primary_address: {
         Args: { p_address: Json; p_customer: Json }
         Returns: string
@@ -1627,7 +1638,19 @@ export type Database = {
         }
         Returns: string
       }
+      mark_bexio_contact_sync_failed: {
+        Args: { p_customer_id: string; p_error_code: string }
+        Returns: boolean
+      }
+      mark_bexio_contact_synced: {
+        Args: { p_bexio_contact_id: number; p_customer_id: string }
+        Returns: boolean
+      }
       purge_resolved_error_log: { Args: never; Returns: number }
+      release_bexio_sync_to_pending: {
+        Args: { p_customer_id: string }
+        Returns: boolean
+      }
       search_customer_ids: { Args: { q: string }; Returns: string[] }
       set_default_customer_address: {
         Args: { p_address_id: string }

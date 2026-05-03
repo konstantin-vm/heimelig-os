@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Loader2, MapPin } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, MapPin } from "lucide-react";
 import { Controller, type Control, type UseFormGetValues, type UseFormSetValue } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
@@ -415,10 +415,18 @@ export function CustomerAddressFields({
         ) : null}
 
         {geoState.kind === "idle" ? (
-          <p className="text-xs text-muted-foreground">
-            Klick auf „Adresse prüfen“ lädt lat/lng über Google Maps. Daten
-            gehen direkt vom Browser an Google – kein Vercel-Hop.
-          </p>
+          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <div className="flex flex-col gap-1">
+              <span className="font-medium">
+                Adresse muss validiert werden, bevor du speichern kannst.
+              </span>
+              <span className="text-amber-900/80">
+                Klick auf „Adresse prüfen“ lädt lat/lng über Google Maps. Daten
+                gehen direkt vom Browser an Google – kein Vercel-Hop.
+              </span>
+            </div>
+          </div>
         ) : null}
       </div>
     </div>

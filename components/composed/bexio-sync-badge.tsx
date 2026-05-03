@@ -5,6 +5,10 @@
 //
 // Status values come from the `customers.bexio_sync_status` enum:
 //   pending        → ⏳ Pending (highlight-soft)
+//   in_progress    → ⏳ Pending (highlight-soft) — sync is actively running;
+//                    visually identical to "pending" per Pencil S-004 (the
+//                    design has 4 states; in_progress is the operational
+//                    reservation flag, not a separate user-facing state).
 //   synced         → ✓ Synced (success-soft)
 //   failed         → ⚠ Fehler (destructive-soft)
 //   never_synced |
@@ -17,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 export type BexioSyncBadgeStatus =
   | "pending"
+  | "in_progress"
   | "synced"
   | "failed"
   | "never_synced"
@@ -40,6 +45,11 @@ const DISPLAY_BY_STATUS: Record<
   DisplayState
 > = {
   pending: {
+    label: "Pending",
+    classes: "bg-highlight-soft text-highlight-foreground",
+    Icon: ClockIcon,
+  },
+  in_progress: {
     label: "Pending",
     classes: "bg-highlight-soft text-highlight-foreground",
     Icon: ClockIcon,

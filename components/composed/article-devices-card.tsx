@@ -14,7 +14,8 @@
 // catalog size, not the post-filter slice.
 
 import { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import Link from "next/link";
+import { Boxes, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -69,15 +70,26 @@ export function ArticleDevicesCard({ articleId }: ArticleDevicesCardProps) {
           <CountBadge count={total} />
         </div>
         {canCreate ? (
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setEditMode({ kind: "create" })}
-            aria-label="Neues Gerät anlegen"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            Neues Gerät
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link
+                href={`/articles/batch?articleId=${articleId}`}
+                aria-label="Sammelregistrierung für diesen Artikel öffnen"
+              >
+                <Boxes className="h-4 w-4" aria-hidden />
+                Sammelregistrierung
+              </Link>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setEditMode({ kind: "create" })}
+              aria-label="Neues Gerät anlegen"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              Neues Gerät
+            </Button>
+          </div>
         ) : null}
       </CardHeader>
       <CardContent className="flex flex-col gap-3">

@@ -146,3 +146,58 @@ export const deviceUpdateSchema = deviceSchema
 export type Device = z.infer<typeof deviceSchema>;
 export type DeviceCreate = z.infer<typeof deviceCreateSchema>;
 export type DeviceUpdate = z.infer<typeof deviceUpdateSchema>;
+
+// ---------------------------------------------------------------------------
+// Story 3.6 — Batch device registration input schema.
+//
+// Mirrors the SECURITY DEFINER RPC `public.batch_register_devices` parameters:
+//   p_article_id, p_quantity, p_warehouse_id, p_supplier_id,
+//   p_acquired_at, p_acquisition_price, p_inbound_date, p_notes.
+//
+// Server-controlled fields (serial_number, qr_code, status, condition, is_new,
+// id, created_*, updated_*) are not in this schema — the function generates
+// them. quantity is hard-capped at 50 per the story spec; larger imports go
+// through Story 9.1 (Blue-Office migration).
+// ---------------------------------------------------------------------------
+
+export const batchRegisterInputSchema = z
+  .object({
+    article_id: uuidSchema,
+    quantity: z
+      .number({ error: "Anzahl ist erforderlich" })
+      .int({ error: "Anzahl muss eine ganze Zahl sein" })
+      .min(1, { error: "Mindestens 1" })
+      .max(50, { error: "Maximal 50 pro Sammelregistrierung" }),
+    current_warehouse_id: uuidSchema.nullable(),
+    supplier_id: uuidSchema.nullable(),
+    acquired_at: isoDateSchema.nullable(),
+    acquisition_price: nonNegativeChfAmountSchema.nullable(),
+    inbound_date: isoDateSchema.nullable(),
+    notes: z
+      .string()
+      .max(2000, { error: "Notizen dürfen höchstens 2000 Zeichen lang sein" })
+      .nullable(),
+  })
+  .superRefine((value, ctx) => {
+    // Date defaults are computed in Europe/Zurich on the form layer; this
+    // tripwire mirrors the deviceUpdateSchema invariant for direct callers.
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Zurich",
+    }).format(new Date());
+    if (value.acquired_at && value.acquired_at > today) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["acquired_at"],
+        message: "Anschaffungsdatum darf nicht in der Zukunft liegen",
+      });
+    }
+    if (value.inbound_date && value.inbound_date > today) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["inbound_date"],
+        message: "Eingangsdatum darf nicht in der Zukunft liegen",
+      });
+    }
+  });
+
+export type BatchRegisterInput = z.infer<typeof batchRegisterInputSchema>;

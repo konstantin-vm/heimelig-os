@@ -1,0 +1,27 @@
+-- Migration 00051 — RESERVED placeholder for an orphan remote-applied slot.
+--
+-- Why this file exists:
+--   A parallel branch applied a migration to the linked Supabase remote at
+--   version 00051 whose canonical SQL never landed in this submodule. Without
+--   *some* file at this slot, `supabase db push --linked` would fail its
+--   local↔remote migration-history consistency check on every push.
+--
+-- What this file does:
+--   `select 1;` — a no-op. Applying it on a fresh environment causes no
+--   schema or data changes. Idempotent on replay.
+--
+-- Revert plan:
+--   When the owning story commits its canonical 00051 content (replacing
+--   this file in-place), `supabase db push --linked` will detect the body
+--   change and apply the canonical SQL on the next push. No additional
+--   reconciliation is needed; just overwrite this file with the real
+--   migration. If the canonical content turns out to live at a different
+--   slot (e.g. the parallel branch was rebased), delete this file in the
+--   same PR that introduces the real slot.
+--
+-- See also:
+--   - supabase/migrations/README.md reserved-range table (slot 00051 row)
+--   - Story 3.6 review findings (D2, 2026-05-04) — the decision to keep,
+--     rename, and document rather than delete (deleting would re-break the
+--     consistency check until the owner commits canonical content).
+select 1;

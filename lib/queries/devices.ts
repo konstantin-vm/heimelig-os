@@ -42,6 +42,7 @@ import { uuidSchema } from "@/lib/validations/common";
 import {
   deviceConditionSchema,
   deviceStatusSchema,
+  type BatchRegisterInput,
   type Device,
   type DeviceCreate,
   type DeviceUpdate,
@@ -485,6 +486,16 @@ function mapDeviceMutationError(code: string | null | undefined): string | null 
       return "Der gewählte Artikel / Standort / Lieferant existiert nicht.";
     case "42501":
       return "Sie haben keine Berechtigung für diese Aktion.";
+    case "22023":
+      // Story 3.6 — `batch_register_devices` raises this for invalid input
+      // (quantity bounds, article/warehouse/supplier eligibility). The RPC's
+      // German message carries the binding text; this is the fallback.
+      return "Ungültige Eingabe für Sammelregistrierung.";
+    case "P0001":
+      // Generic PL/pgSQL `raise exception` without an explicit errcode.
+      // Story 3.6 RPC uses specific codes (42501, 22023), but defensive
+      // mapping here covers any future RPC that raises with the default.
+      return "Sammelregistrierung abgelehnt — bitte Eingaben prüfen.";
     case "PGRST116":
       return "Aktualisierung betraf 0 Zeilen — möglicherweise fehlt die RLS-Berechtigung.";
     default:
@@ -887,4 +898,95 @@ export function useDeviceRealtime(id: string | null, instanceKey: string) {
       void supabase.removeChannel(channel);
     };
   }, [id, instanceKey, queryClient]);
+}
+
+// ---------------------------------------------------------------------------
+// Story 3.6 — Batch device registration mutation.
+//
+// Calls the SECURITY DEFINER RPC `public.batch_register_devices` (migration
+// 00052, re-emitted by 00054 with review fixes). The function generates
+// serial_numbers under a per-article advisory lock + atomic N-row INSERT,
+// returning `{id, serial_number}[]` for the toast + downstream Story 3.7
+// (label PDF) hook.
+//
+// Privilege: admin / office / warehouse — the RPC role-gates internally and
+// raises 42501 otherwise. Warehouse callers' acquisition_price is silently
+// stripped to NULL inside the function (defense-in-depth on top of the form
+// hide). The mutation never reaches the table directly — `devices` RLS
+// remains intact for non-batch flows.
+// ---------------------------------------------------------------------------
+
+export type BatchRegisterResult = Array<{
+  id: string;
+  serial_number: string;
+}>;
+
+export function useBatchRegisterDevices(
+  options?: UseMutationOptions<BatchRegisterResult, Error, BatchRegisterInput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: BatchRegisterInput) => {
+      const supabase = createClient();
+      // RPC types come from `lib/supabase/types.ts` (auto-generated after
+      // `pnpm db:types`). nullable fields → `undefined` over the wire so the
+      // optional positional defaults of the PG function fire.
+      const { data, error } = await supabase.rpc("batch_register_devices", {
+        p_article_id: input.article_id,
+        p_quantity: input.quantity,
+        p_warehouse_id: input.current_warehouse_id ?? undefined,
+        p_supplier_id: input.supplier_id ?? undefined,
+        p_acquired_at: input.acquired_at ?? undefined,
+        p_acquisition_price: input.acquisition_price ?? undefined,
+        p_inbound_date: input.inbound_date ?? undefined,
+        p_notes: input.notes ?? undefined,
+      });
+
+      if (error) {
+        await logError(
+          {
+            errorType: "DB_FUNCTION",
+            severity: "error",
+            source: "device-batch-register",
+            message: "batch register failed",
+            details: {
+              article_id: input.article_id,
+              quantity: input.quantity,
+              operation: "batch-register",
+              code: error.code ?? null,
+            },
+            entity: "devices",
+          },
+          supabase,
+        );
+        // Prefer the verbatim PG message when the RPC raised one of the
+        // German user-facing strings authored in `batch_register_devices`
+        // — those are more specific than the friendly map. For any other
+        // error code (e.g. 23505 unique_violation, where PG emits an
+        // English "duplicate key value" message that would surface ugly
+        // schema details), fall through to the friendly German fallback.
+        if (
+          typeof error.message === "string" &&
+          /^(Anzahl muss|Artikel ist nicht|Lager ist nicht|Lieferant ist nicht|Sammelregistrierung erfordert|Serial-Bereich für|p_article_id darf nicht NULL)/u.test(
+            error.message,
+          )
+        ) {
+          throw new Error(error.message);
+        }
+        const friendly = mapDeviceMutationError(error.code);
+        if (friendly) throw new Error(friendly);
+        throw error;
+      }
+      return (data ?? []) as BatchRegisterResult;
+    },
+    ...options,
+    onSuccess: (...args) => {
+      const [, vars] = args;
+      queryClient.invalidateQueries({ queryKey: deviceKeys.all });
+      queryClient.invalidateQueries({
+        queryKey: deviceKeys.byArticleAll(vars.article_id),
+      });
+      return options?.onSuccess?.(...args);
+    },
+  });
 }

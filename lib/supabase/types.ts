@@ -148,6 +148,13 @@ export type Database = {
             foreignKeyName: "articles_variant_of_id_fkey"
             columns: ["variant_of_id"]
             isOneToOne: false
+            referencedRelation: "inventory_overview"
+            referencedColumns: ["article_id"]
+          },
+          {
+            foreignKeyName: "articles_variant_of_id_fkey"
+            columns: ["variant_of_id"]
+            isOneToOne: false
             referencedRelation: "technician_articles"
             referencedColumns: ["id"]
           },
@@ -855,6 +862,13 @@ export type Database = {
             foreignKeyName: "devices_article_id_fkey"
             columns: ["article_id"]
             isOneToOne: false
+            referencedRelation: "inventory_overview"
+            referencedColumns: ["article_id"]
+          },
+          {
+            foreignKeyName: "devices_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
             referencedRelation: "technician_articles"
             referencedColumns: ["id"]
           },
@@ -1133,6 +1147,13 @@ export type Database = {
             foreignKeyName: "price_lists_article_id_fkey"
             columns: ["article_id"]
             isOneToOne: false
+            referencedRelation: "inventory_overview"
+            referencedColumns: ["article_id"]
+          },
+          {
+            foreignKeyName: "price_lists_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
             referencedRelation: "technician_articles"
             referencedColumns: ["id"]
           },
@@ -1162,6 +1183,67 @@ export type Database = {
             columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      qr_label_runs: {
+        Row: {
+          article_id: string
+          batch_id: string
+          created_at: string
+          created_by: string | null
+          device_count: number | null
+          device_ids: string[]
+          failure_reason: string | null
+          id: string
+          status: string
+          storage_path: string
+        }
+        Insert: {
+          article_id: string
+          batch_id: string
+          created_at?: string
+          created_by?: string | null
+          device_count?: number | null
+          device_ids: string[]
+          failure_reason?: string | null
+          id?: string
+          status?: string
+          storage_path: string
+        }
+        Update: {
+          article_id?: string
+          batch_id?: string
+          created_at?: string
+          created_by?: string | null
+          device_count?: number | null
+          device_ids?: string[]
+          failure_reason?: string | null
+          id?: string
+          status?: string
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qr_label_runs_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qr_label_runs_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_overview"
+            referencedColumns: ["article_id"]
+          },
+          {
+            foreignKeyName: "qr_label_runs_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "technician_articles"
             referencedColumns: ["id"]
           },
         ]
@@ -1533,6 +1615,29 @@ export type Database = {
           },
         ]
       }
+      inventory_overview: {
+        Row: {
+          article_id: string | null
+          article_number: string | null
+          availability_bucket: string | null
+          available_devices: number | null
+          category: string | null
+          cleaning_devices: number | null
+          critical_stock: number | null
+          is_active: boolean | null
+          manufacturer: string | null
+          min_stock: number | null
+          name: string | null
+          rented_devices: number | null
+          repair_devices: number | null
+          retired_devices: number | null
+          sold_devices: number | null
+          stock_warning: string | null
+          total_devices: number | null
+          variant_label: string | null
+        }
+        Relationships: []
+      }
       technician_articles: {
         Row: {
           article_number: string | null
@@ -1664,6 +1769,13 @@ export type Database = {
             foreignKeyName: "articles_variant_of_id_fkey"
             columns: ["variant_of_id"]
             isOneToOne: false
+            referencedRelation: "inventory_overview"
+            referencedColumns: ["article_id"]
+          },
+          {
+            foreignKeyName: "articles_variant_of_id_fkey"
+            columns: ["variant_of_id"]
+            isOneToOne: false
             referencedRelation: "technician_articles"
             referencedColumns: ["id"]
           },
@@ -1700,6 +1812,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "articles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_overview"
+            referencedColumns: ["article_id"]
           },
           {
             foreignKeyName: "devices_article_id_fkey"
@@ -1786,8 +1905,167 @@ export type Database = {
         }
         Relationships: []
       }
+      warehouse_devices: {
+        Row: {
+          acquired_at: string | null
+          article_id: string | null
+          condition: string | null
+          created_at: string | null
+          created_by: string | null
+          current_contract_id: string | null
+          current_warehouse_id: string | null
+          id: string | null
+          inbound_date: string | null
+          is_new: boolean | null
+          notes: string | null
+          outbound_date: string | null
+          qr_code: string | null
+          reserved_at: string | null
+          reserved_for_customer_id: string | null
+          retired_at: string | null
+          serial_number: string | null
+          status: string | null
+          supplier_id: string | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          acquired_at?: string | null
+          article_id?: string | null
+          condition?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          current_contract_id?: string | null
+          current_warehouse_id?: string | null
+          id?: string | null
+          inbound_date?: string | null
+          is_new?: boolean | null
+          notes?: string | null
+          outbound_date?: string | null
+          qr_code?: string | null
+          reserved_at?: string | null
+          reserved_for_customer_id?: string | null
+          retired_at?: string | null
+          serial_number?: string | null
+          status?: string | null
+          supplier_id?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          acquired_at?: string | null
+          article_id?: string | null
+          condition?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          current_contract_id?: string | null
+          current_warehouse_id?: string | null
+          id?: string | null
+          inbound_date?: string | null
+          is_new?: boolean | null
+          notes?: string | null
+          outbound_date?: string | null
+          qr_code?: string | null
+          reserved_at?: string | null
+          reserved_for_customer_id?: string | null
+          retired_at?: string | null
+          serial_number?: string | null
+          status?: string | null
+          supplier_id?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "devices_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_overview"
+            referencedColumns: ["article_id"]
+          },
+          {
+            foreignKeyName: "devices_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "technician_articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_current_warehouse_id_fkey"
+            columns: ["current_warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_reserved_for_customer_id_fkey"
+            columns: ["reserved_for_customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      batch_register_devices: {
+        Args: {
+          p_acquired_at?: string
+          p_acquisition_price?: number
+          p_article_id: string
+          p_inbound_date?: string
+          p_notes?: string
+          p_quantity: number
+          p_supplier_id?: string
+          p_warehouse_id?: string
+        }
+        Returns: {
+          id: string
+          serial_number: string
+        }[]
+      }
       bexio_complete_oauth: {
         Args: {
           p_access_token_encrypted: string
@@ -1936,6 +2214,10 @@ export type Database = {
         Args: { p_address_id: string }
         Returns: undefined
       }
+      set_device_qr_code: {
+        Args: { p_device_id: string; p_qr_code: string }
+        Returns: undefined
+      }
       set_primary_contact_person: {
         Args: { p_contact_id: string }
         Returns: undefined
@@ -1949,6 +2231,39 @@ export type Database = {
       storage_first_segment_is_uuid: {
         Args: { p_name: string }
         Returns: boolean
+      }
+      transition_device_status: {
+        Args: { p_context?: Json; p_device_id: string; p_new_status: string }
+        Returns: {
+          acquired_at: string | null
+          acquisition_price: number | null
+          article_id: string
+          condition: string
+          created_at: string
+          created_by: string | null
+          current_contract_id: string | null
+          current_warehouse_id: string | null
+          id: string
+          inbound_date: string | null
+          is_new: boolean
+          notes: string | null
+          outbound_date: string | null
+          qr_code: string | null
+          reserved_at: string | null
+          reserved_for_customer_id: string | null
+          retired_at: string | null
+          serial_number: string
+          status: string
+          supplier_id: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "devices"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       update_customer_with_primary_address: {
         Args: { p_address: Json; p_customer: Json; p_id: string }

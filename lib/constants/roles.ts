@@ -27,6 +27,7 @@ export const ROLE_ALLOWED_PATHS: Record<AppRole, readonly string[]> = {
     "/contracts",
     "/invoices",
     "/tours",
+    "/scan",
     "/settings",
     "/errors",
   ],
@@ -38,8 +39,9 @@ export const ROLE_ALLOWED_PATHS: Record<AppRole, readonly string[]> = {
     "/contracts",
     "/invoices",
     "/tours",
+    "/scan",
   ],
-  warehouse: ["/articles"],
+  warehouse: ["/articles", "/scan"],
   technician: ["/tour", "/stop"],
 };
 

@@ -43,6 +43,7 @@ import {
   type DeviceListSortColumn,
   type DeviceListSortDir,
 } from "@/lib/constants/device";
+import type { AppRole } from "@/lib/constants/roles";
 import { getSessionRole } from "@/lib/supabase/session";
 import { logError } from "@/lib/utils/error-log";
 import { uuidSchema } from "@/lib/validations/common";
@@ -93,6 +94,13 @@ export const deviceKeys = {
     [...deviceKeys.lists(), filters] as const,
   details: () => [...deviceKeys.all, "detail"] as const,
   detail: (id: string) => [...deviceKeys.details(), id] as const,
+  // Story 3.5 — reverse-QR lookup keyed off the scanned payload (qr_code or
+  // serial_number) AND the role-derived source view (warehouse vs full
+  // devices table). Including the source prevents a cached warehouse-view
+  // row from satisfying an admin/office query that expects the full row, or
+  // vice versa, when the role resolves mid-session.
+  byQrPayload: (payload: string, source: "devices" | "warehouse_devices") =>
+    [...deviceKeys.all, "byQrPayload", source, payload] as const,
   audit: (id: string, limit: number, offset: number) =>
     [...deviceKeys.all, "audit", id, { limit, offset }] as const,
   /** Parent prefix for invalidating every audit-page slice for a device. */
@@ -482,6 +490,173 @@ export function useDevice(id: string | null) {
           return parsed.data;
         }
       : skipToken,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// useDeviceByQrPayload — Story 3.5 reverse-QR lookup.
+//
+// Given a scanned (or manually entered) payload, returns the matching device
+// row. The QR-payload contract is owned by Story 3.7's `lib/qr-labels/encode.ts`:
+// payload === device.qr_code when set, else device.serial_number. The lookup
+// here mirrors the contract by OR-ing both columns — Q5-agnostic by
+// construction, so a future Blue-Office format swap (changes encode.ts only)
+// does not require a Story 3.5 follow-up.
+//
+// Role branch: warehouse reads through `public.warehouse_devices` (column
+// redaction — drops acquisition_price); admin / office read through
+// `public.devices`. Both share the same SELECT projection (acquisition_price
+// is not displayed in the scan result panel anyway), so the Zod row schema
+// is the same for both branches.
+//
+// SAFETY:
+//   * Payload capped to 256 chars before passing to PostgREST — keeps the URL
+//     within budget and mirrors the `qr_code` length cap from migration
+//     00050 / Story 3.7.
+//   * Two sequential `.eq()` queries (qr_code first, serial_number fallback)
+//     instead of a single `.or()`. Two reasons:
+//       1. PostgREST `.or()` value-position is unsafe for arbitrary payloads
+//          — the `,` and `:` chars break the filter grammar; manual entry can
+//          accept anything the user types. `.eq()` value is parameter-bound,
+//          fully escape-safe.
+//       2. `qr_code` and `serial_number` are independently unique but cross-
+//          column collisions are NOT prevented at the schema level. A single
+//          `.or().maybeSingle()` would raise `PGRST116` if device A's
+//          `qr_code` happens to equal device B's `serial_number`. The
+//          sequential lookup resolves to a single canonical hit by always
+//          preferring the `qr_code` match (the encoder's primary output).
+//   * `retired_at IS NULL` — soft-deleted devices are invisible to the scan
+//     flow.
+//   * Disabled until the role resolves (`opts.enabled`) so the first
+//     warehouse-user request does not race against `useAppRole()` and hit
+//     the wrong source view under RLS.
+// ---------------------------------------------------------------------------
+
+const SCAN_PAYLOAD_MAX_LEN = 256;
+
+// Minimal row shape for the post-scan result panel. Drops acquisition_price
+// (so warehouse + admin/office branches parse identically); keeps the four
+// fields the transition dialog needs (id, status, article_id, serial_number)
+// plus the display fields the result panel renders.
+const scanDeviceRowSchema = z.object({
+  id: uuidSchema,
+  serial_number: z.string(),
+  article_id: uuidSchema,
+  qr_code: z.string().nullable(),
+  status: deviceStatusSchema,
+  condition: deviceConditionSchema,
+  is_new: z.boolean(),
+  current_warehouse_id: uuidSchema.nullable(),
+  retired_at: z.string().nullable(),
+  articles: deviceArticleJoinSchema,
+  warehouses: deviceWarehouseJoinSchema,
+});
+
+export type ScanDeviceRow = z.infer<typeof scanDeviceRowSchema>;
+
+const SCAN_DEVICE_SELECT = `
+  id,
+  serial_number,
+  article_id,
+  qr_code,
+  status,
+  condition,
+  is_new,
+  current_warehouse_id,
+  retired_at,
+  articles ( article_number, name, variant_label ),
+  warehouses ( code, name )
+`;
+
+export function useDeviceByQrPayload(
+  payload: string | null,
+  opts?: { role?: AppRole | null; enabled?: boolean },
+) {
+  const trimmed =
+    payload != null ? payload.slice(0, SCAN_PAYLOAD_MAX_LEN) : "";
+  const role = opts?.role ?? null;
+  const source = role === "warehouse" ? "warehouse_devices" : "devices";
+  // Wait for the role to resolve before issuing the first request — the
+  // warehouse view is column-redacted; firing against `devices` while role
+  // is still pending would error under RLS for warehouse users.
+  const enabled = trimmed.length > 0 && (opts?.enabled ?? true);
+
+  return useQuery({
+    queryKey: deviceKeys.byQrPayload(trimmed, source),
+    enabled,
+    queryFn: async (): Promise<ScanDeviceRow | null> => {
+      const supabase = createClient();
+
+      async function lookupBy(
+        column: "qr_code" | "serial_number",
+      ): Promise<ScanDeviceRow | null | "ERROR"> {
+        const { data, error } = await supabase
+          .from(source)
+          .select(SCAN_DEVICE_SELECT)
+          .eq(column, trimmed)
+          .is("retired_at", null)
+          .maybeSingle();
+
+        if (error) {
+          // Fire-and-forget — awaiting blocks the AC1 ≤2s scan-to-result
+          // budget on flaky 4G. No PII (payload is the device's own ID).
+          void logError(
+            {
+              errorType: "DB_FUNCTION",
+              severity: "error",
+              source: "qr-scan",
+              message: "device reverse-QR lookup failed",
+              details: {
+                source,
+                column,
+                operation: "byQrPayload",
+                code: error.code ?? null,
+              },
+              entity: source,
+            },
+            supabase,
+          );
+          return "ERROR";
+        }
+        if (data == null) return null;
+
+        const r = data as Record<string, unknown>;
+        const normalised = {
+          ...r,
+          articles: unwrapEmbed(r.articles as unknown),
+          warehouses: unwrapEmbed(r.warehouses as unknown),
+        };
+
+        const parsed = scanDeviceRowSchema.safeParse(normalised);
+        if (!parsed.success) {
+          void logError(
+            {
+              errorType: "VALIDATION",
+              severity: "error",
+              source: "qr-scan",
+              message: "device shape drift on QR lookup",
+              details: {
+                source,
+                column,
+                operation: "byQrPayload",
+                issueCount: parsed.error.issues.length,
+              },
+              entity: source,
+            },
+            supabase,
+          );
+          return null;
+        }
+        return parsed.data;
+      }
+
+      const byQr = await lookupBy("qr_code");
+      if (byQr === "ERROR") throw new Error("byQrPayload lookup failed");
+      if (byQr != null) return byQr;
+      const bySerial = await lookupBy("serial_number");
+      if (bySerial === "ERROR") throw new Error("byQrPayload lookup failed");
+      return bySerial;
+    },
   });
 }
 

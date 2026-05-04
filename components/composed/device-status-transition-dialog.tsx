@@ -55,12 +55,16 @@ export type DeviceStatusTransitionDialogProps = {
   };
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Fired only on a successful RPC. Story 3.5 wires its scan-result auto-clear
+  // here so cancel-by-Escape does not yank the worker back to the camera.
+  onSuccess?: (newStatus: Device["status"]) => void;
 };
 
 export function DeviceStatusTransitionDialog({
   device,
   open,
   onOpenChange,
+  onSuccess,
 }: DeviceStatusTransitionDialogProps) {
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +96,7 @@ export function DeviceStatusTransitionDialog({
     onSuccess: (_data, vars) => {
       toast.success(`Status auf „${deviceStatusLabels[vars.newStatus]}“ geändert.`);
       onOpenChange(false);
+      onSuccess?.(vars.newStatus);
     },
     onError: (err) => {
       // Keep the dialog open. Surface the (already-mapped German) message

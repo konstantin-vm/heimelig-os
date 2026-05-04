@@ -13,7 +13,8 @@ export type NavIconKey =
   | "invoices"
   | "tours"
   | "settings"
-  | "tour";
+  | "tour"
+  | "scan";
 
 export type NavSubItem = {
   key: string;
@@ -49,6 +50,23 @@ export const DESKTOP_NAV: readonly NavItem[] = [
     href: "/customers",
     iconKey: "customers",
     roles: ["admin", "office"],
+    shell: "desktop",
+  },
+  {
+    // Story 3.5 — top-level entry for the warehouse mobile QR scan page
+    // (D-ROUTE 2026-05-04). Positioned above "Artikel" so warehouse — who
+    // sees only `scan` + `articles` — gets the scan flow as the first nav
+    // row (their most-used path); admin / office see it as an additional
+    // row above "Artikel" for occasional support use. Per-role ordering
+    // would require a richer nav schema; documented in
+    // `2026-05-04_story-3-5.md` as the cheap default until it's needed.
+    // Technician is intentionally excluded — their in-stop scanner lives
+    // under `/(technician)/stop/[id]` (Epic-8 / Story 8.4).
+    key: "scan",
+    labelDe: "Scannen",
+    href: "/scan",
+    iconKey: "scan",
+    roles: ["admin", "office", "warehouse"],
     shell: "desktop",
   },
   {

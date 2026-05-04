@@ -5,6 +5,7 @@ import {
   Package,
   Receipt,
   Route,
+  ScanLine,
   Settings,
   Truck,
   Users,
@@ -23,4 +24,5 @@ export const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   tours: Truck,
   settings: Settings,
   tour: Route,
+  scan: ScanLine,
 };

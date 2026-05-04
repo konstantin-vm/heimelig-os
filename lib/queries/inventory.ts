@@ -329,8 +329,22 @@ export function useInventoryRealtime(instanceKey: string): {
   useEffect(() => {
     const supabase = createClient();
     subscribedRef.current = false;
+    // Story 3.5 — 100ms trailing-edge throttle around the invalidate call.
+    // A warehouse worker rebooking 5–10 devices in 30 seconds via the new
+    // `/scan` flow now feeds this hook; without throttling, every transition
+    // kicks two postgres_changes events (DELETE + INSERT on the device row's
+    // status update path, plus any tab keeping its own postgres-changes
+    // subscription) and each one triggers a full inventory refetch. The
+    // trailing-edge timer collapses bursts; a single isolated event still
+    // resolves within 100ms of the writer's commit. Resolves
+    // `_bmad-output/implementation-artifacts/deferred-work.md` line 8.
+    let invalidateTimer: ReturnType<typeof setTimeout> | null = null;
     const invalidate = () => {
-      queryClient.invalidateQueries({ queryKey: inventoryKeys.all });
+      if (invalidateTimer != null) clearTimeout(invalidateTimer);
+      invalidateTimer = setTimeout(() => {
+        invalidateTimer = null;
+        queryClient.invalidateQueries({ queryKey: inventoryKeys.all });
+      }, 100);
     };
 
     const channel = supabase
@@ -374,6 +388,7 @@ export function useInventoryRealtime(instanceKey: string): {
 
     return () => {
       clearTimeout(timeout);
+      if (invalidateTimer != null) clearTimeout(invalidateTimer);
       void supabase.removeChannel(channel);
     };
   }, [instanceKey, queryClient]);

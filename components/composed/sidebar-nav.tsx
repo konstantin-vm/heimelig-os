@@ -133,6 +133,24 @@ function SidebarLink({
   );
 }
 
+function pickActiveChildKey(
+  children: readonly NavSubItem[],
+  pathname: string,
+): string | null {
+  // Longest-prefix wins so an "index" sub-item that shares the parent's href
+  // (e.g. "Produkte" → /articles) does not stay active on sibling pages like
+  // /articles/devices.
+  let bestKey: string | null = null;
+  let bestLen = -1;
+  for (const child of children) {
+    if (isActive(pathname, child.href) && child.href.length > bestLen) {
+      bestLen = child.href.length;
+      bestKey = child.key;
+    }
+  }
+  return bestKey;
+}
+
 function SidebarExpandable({
   item,
   pathname,
@@ -143,7 +161,8 @@ function SidebarExpandable({
   onNavigate?: () => void;
 }) {
   const children = item.children ?? [];
-  const hasActiveChild = children.some((c) => isActive(pathname, c.href));
+  const activeChildKey = pickActiveChildKey(children, pathname);
+  const hasActiveChild = activeChildKey !== null;
   const [expanded, setExpanded] = useState<boolean>(hasActiveChild);
 
   useEffect(() => {
@@ -202,7 +221,7 @@ function SidebarExpandable({
             <SidebarSubItemRow
               key={child.key}
               child={child}
-              active={isActive(pathname, child.href)}
+              active={child.key === activeChildKey}
               onNavigate={onNavigate}
             />
           ))}
@@ -440,7 +459,7 @@ export function SidebarNav({
   }, [drawerOpen]);
 
   const shellClasses =
-    "flex h-svh w-60 shrink-0 flex-col gap-4 bg-sidebar p-2 text-sidebar-foreground";
+    "flex h-svh w-64 shrink-0 flex-col gap-4 bg-sidebar p-2 text-sidebar-foreground";
 
   return (
     <>

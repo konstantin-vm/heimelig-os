@@ -43,14 +43,18 @@ const INSURER_LABEL: Record<InsuranceBadgeInsurer, string> = {
 // Color map per `customer-list.md` Design Tokens table:
 //   Helsana  → info-soft / info-foreground
 //   Sanitas  → primary-soft / primary
-//   KPT      → highlight-soft / highlight-foreground
+//   KPT      → highlight-soft / highlight-foreground-soft (deep coral on
+//              pale coral — the spec says "highlight-foreground" but that
+//              token is white for the strong CTA, so the badge text was
+//              unreadable; added `--highlight-foreground-soft` to match
+//              the success/info/warning -foreground pattern)
 //   Visana   → success-soft / success
 //   Andere   → muted
 //   Keine    → muted (slightly softer)
 const INSURER_CLASSES: Record<InsuranceBadgeInsurer, string> = {
   helsana: "bg-info-soft text-info-foreground",
   sanitas: "bg-primary-soft text-primary",
-  kpt: "bg-highlight-soft text-highlight-foreground",
+  kpt: "bg-highlight-soft text-highlight-foreground-soft",
   visana: "bg-success-soft text-success-foreground",
   other: "bg-muted text-muted-foreground",
   none: "bg-muted/60 text-muted-foreground",

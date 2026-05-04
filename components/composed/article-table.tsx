@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useId, useMemo } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -36,6 +35,15 @@ import {
   type ArticleListRow,
   type ArticleStatusFilter,
 } from "@/lib/queries/articles";
+import {
+  navigateOnRowClick,
+  navigateOnRowKey,
+} from "@/lib/utils/row-navigation";
+import {
+  buildPageSizeHandler,
+  PAGE_SIZE_OPTIONS,
+  usePageSizeParam,
+} from "@/lib/utils/url-page-size";
 import { cn } from "@/lib/utils";
 
 import { PriceDisplay } from "./price-display";
@@ -52,6 +60,7 @@ type ReadonlyURLSearchParams = ReturnType<typeof useSearchParams>;
 function parseFilters(
   searchParams: URLSearchParams | ReadonlyURLSearchParams,
   searchTerm: string,
+  pageSize: number,
 ): {
   filters: ArticleListFilters;
   page: number;
@@ -100,7 +109,7 @@ function parseFilters(
     sort,
     dir,
     page,
-    pageSize: ARTICLE_LIST_PAGE_SIZE,
+    pageSize,
   };
   return { filters, page, sort, dir };
 }
@@ -121,9 +130,11 @@ export function ArticleTable({
   const queryClient = useQueryClient();
   const channelSuffix = useId();
 
+  const pageSize = usePageSizeParam(searchParams, ARTICLE_LIST_PAGE_SIZE);
+
   const { filters, page, sort, dir } = useMemo(
-    () => parseFilters(searchParams, searchTerm),
-    [searchParams, searchTerm],
+    () => parseFilters(searchParams, searchTerm, pageSize),
+    [searchParams, searchTerm, pageSize],
   );
 
   const { data, isLoading, isError, refetch, isFetching } =
@@ -131,7 +142,7 @@ export function ArticleTable({
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
 
-  const lastPage = Math.max(1, Math.ceil(total / ARTICLE_LIST_PAGE_SIZE));
+  const lastPage = Math.max(1, Math.ceil(total / pageSize));
   useEffect(() => {
     if (!isLoading && total > 0 && page > lastPage) {
       const params = new URLSearchParams(searchParams.toString());
@@ -347,74 +358,88 @@ export function ArticleTable({
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className={cn(
-                    "border-b border-border last:border-b-0",
-                    "hover:bg-muted/30 focus-within:bg-muted/30",
-                  )}
-                >
-                  <td className="px-3 py-3 tabular-nums">
-                    <Link
-                      href={`/articles/${row.id}`}
-                      className="-mx-3 -my-3 block px-3 py-3 text-sm font-medium text-foreground focus-visible:underline focus-visible:outline-hidden"
-                      aria-label={`Artikel ${row.article_number} öffnen`}
-                    >
-                      {row.article_number}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-3 text-sm">
-                    <div className="flex flex-col">
-                      <span className="font-medium text-foreground">{row.name}</span>
-                      {row.variant_label ? (
-                        <span className="text-[12px] text-muted-foreground">
-                          {row.variant_label}
+              rows.map((row) => {
+                const detailHref = `/articles/${row.id}`;
+                return (
+                  <tr
+                    key={row.id}
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`Artikel ${row.article_number} öffnen`}
+                    onClick={(e) => navigateOnRowClick(e, router, detailHref)}
+                    onKeyDown={(e) => navigateOnRowKey(e, router, detailHref)}
+                    className={cn(
+                      "border-b border-border last:border-b-0 cursor-pointer",
+                      "hover:bg-muted/30 focus-within:bg-muted/30",
+                      "focus-visible:bg-muted/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                    )}
+                  >
+                    <td className="px-3 py-3 tabular-nums">
+                      <span className="text-sm font-medium text-foreground">
+                        {row.article_number}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-sm">
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">
+                          {row.name}
                         </span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 text-sm text-foreground">
-                    {articleCategoryLabels[row.category]}
-                  </td>
-                  <td className="px-3 py-3 text-sm">
-                    <UsageChips
-                      isRentable={row.is_rentable}
-                      isSellable={row.is_sellable}
-                      type={row.type}
-                    />
-                  </td>
-                  <td className="px-3 py-3 text-sm text-foreground">
-                    {articleVatRateLabels[
-                      row.vat_rate as keyof typeof articleVatRateLabels
-                    ] ?? "—"}
-                  </td>
-                  <td className="px-3 py-3 text-right">
-                    <PriceDisplay amount={row.current_private_price} />
-                  </td>
-                  <td className="px-3 py-3">
-                    <StatusBadge
-                      entity="article"
-                      status={row.is_active ? "active" : "inactive"}
-                    />
-                  </td>
-                  <td className="px-3 py-3 text-right">
-                    <RowActions
-                      onView={() => router.push(`/articles/${row.id}`)}
-                      onEdit={() => onEdit(row.id)}
-                    />
-                  </td>
-                </tr>
-              ))
+                        {row.variant_label ? (
+                          <span className="text-[12px] text-muted-foreground">
+                            {row.variant_label}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-sm text-foreground">
+                      {articleCategoryLabels[row.category]}
+                    </td>
+                    <td className="px-3 py-3 text-sm">
+                      <UsageChips
+                        isRentable={row.is_rentable}
+                        isSellable={row.is_sellable}
+                        type={row.type}
+                      />
+                    </td>
+                    <td className="px-3 py-3 text-sm text-foreground">
+                      {articleVatRateLabels[
+                        row.vat_rate as keyof typeof articleVatRateLabels
+                      ] ?? "—"}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <PriceDisplay amount={row.current_private_price} />
+                    </td>
+                    <td className="px-3 py-3">
+                      <StatusBadge
+                        entity="article"
+                        status={row.is_active ? "active" : "inactive"}
+                      />
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <RowActions
+                        onEdit={() => onEdit(row.id)}
+                        triggerAriaLabel={`Aktionen für Artikel ${row.article_number}`}
+                        editLabel="Artikel bearbeiten"
+                      />
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
       <TablePagination
         page={page}
-        pageSize={ARTICLE_LIST_PAGE_SIZE}
+        pageSize={pageSize}
         total={total}
         onPageChange={pushPage}
+        onPageSizeChange={buildPageSizeHandler(
+          searchParams,
+          router,
+          ARTICLE_LIST_PAGE_SIZE,
+        )}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
         itemNoun="Artikeln"
       />
     </Card>

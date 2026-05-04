@@ -4,11 +4,15 @@
 // Verbunden/Läuft bald ab/Abgelaufen/Nicht verbunden). Do not conflate.
 //
 // Status values come from the `customers.bexio_sync_status` enum:
-//   pending        → ⏳ Pending (highlight-soft)
-//   in_progress    → ⏳ Pending (highlight-soft) — sync is actively running;
+//   pending        → ⏳ Pending (warning-soft)
+//   in_progress    → ⏳ Pending (warning-soft) — sync is actively running;
 //                    visually identical to "pending" per Pencil S-004 (the
 //                    design has 4 states; in_progress is the operational
 //                    reservation flag, not a separate user-facing state).
+//                    Uses `--warning` (amber) per the globals.css contract
+//                    "Warning — pending/draft, cleaning, low-stock"; the
+//                    earlier `--highlight` mapping rendered white text on
+//                    pale coral and was unreadable.
 //   synced         → ✓ Synced (success-soft)
 //   failed         → ⚠ Fehler (destructive-soft)
 //   never_synced |
@@ -46,12 +50,12 @@ const DISPLAY_BY_STATUS: Record<
 > = {
   pending: {
     label: "Pending",
-    classes: "bg-highlight-soft text-highlight-foreground",
+    classes: "bg-warning-soft text-warning-foreground",
     Icon: ClockIcon,
   },
   in_progress: {
     label: "Pending",
-    classes: "bg-highlight-soft text-highlight-foreground",
+    classes: "bg-warning-soft text-warning-foreground",
     Icon: ClockIcon,
   },
   synced: {

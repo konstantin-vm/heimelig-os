@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 
 import {
   BexioContactCard,
@@ -19,13 +18,9 @@ import {
   CustomerRevenueCard,
 } from "@/components/composed";
 import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
+  PAGE_HEADER_PRIORITY,
+  useSetPageHeader,
+} from "@/lib/contexts/page-header-context";
 
 export type CustomerProfileShellProps = {
   customerId: string;
@@ -38,22 +33,20 @@ export function CustomerProfileShell({
 }: CustomerProfileShellProps) {
   const [editOpen, setEditOpen] = useState(false);
 
+  // Top bar: "Kunden / Huber, Margrit" (entity name in current-page slot).
+  // The auto-resolver can't know the customer name, so the page provides it.
+  useSetPageHeader(
+    {
+      breadcrumb: [
+        { label: "Kunden", href: "/customers" },
+        { label: fullName },
+      ],
+    },
+    PAGE_HEADER_PRIORITY.override,
+  );
+
   return (
     <div className="flex flex-col gap-6">
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink asChild>
-              <Link href="/customers">Kunden</Link>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage>{fullName}</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
-
       <CustomerProfileHeader
         customerId={customerId}
         onEdit={() => setEditOpen(true)}

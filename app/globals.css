@@ -38,6 +38,7 @@
   --color-highlight: var(--highlight);
   --color-highlight-foreground: var(--highlight-foreground);
   --color-highlight-soft: var(--highlight-soft);
+  --color-highlight-foreground-soft: var(--highlight-foreground-soft);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-success-soft: var(--success-soft);
@@ -119,8 +120,9 @@
     --ring:                   oklch(29.5%  0.0944  279.7);
 
     --highlight:              oklch(71.5%  0.1663  43.5);    /* Korallen-Orange — CTA highlight */
-    --highlight-foreground:   oklch(100%   0       0);
+    --highlight-foreground:   oklch(100%   0       0);       /* White — for text on the strong --highlight CTA */
     --highlight-soft:         oklch(96.0%  0.03    43.5);    /* Pale coral — badge bg */
+    --highlight-foreground-soft: oklch(28%  0.10    43.5);   /* Deep coral — text on --highlight-soft (4.5:1+ contrast); matches the success/info/warning -foreground pattern */
 
     --success:                oklch(81.7%  0.2082  153.2);   /* Frühlingsgrün — brand accent: icons against dark indigo, chart highlight */
     --success-strong:         oklch(65%    0.16    153.2);   /* Tuned-down green — fill surfaces (progress bars) where brand neon overpowers neighbouring info/destructive segments */
@@ -196,6 +198,7 @@
     --highlight:              oklch(71.5%  0.1663  43.5);
     --highlight-foreground:   oklch(100%   0       0);
     --highlight-soft:         oklch(35%    0.08    43.5);
+    --highlight-foreground-soft: oklch(95%  0.03    43.5);   /* Pale coral — text on dark-mode --highlight-soft */
 
     --success:                oklch(81.7%  0.2082  153.2);
     --success-foreground:     oklch(20%    0.06    153.2);
@@ -238,5 +241,41 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/*
+  Tailwind v4 dropped the v3 default of `cursor: pointer` on buttons (matches
+  the browser default). Restore pointer affordance app-wide for interactive
+  elements — disabled / aria-disabled stay on the default cursor.
+*/
+@layer base {
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='tab']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='menuitemcheckbox']:not([aria-disabled='true']),
+  [role='menuitemradio']:not([aria-disabled='true']),
+  [role='option']:not([aria-disabled='true']),
+  [role='link']:not([aria-disabled='true']),
+  [role='switch']:not([aria-disabled='true']),
+  [role='checkbox']:not([aria-disabled='true']),
+  [role='radio']:not([aria-disabled='true']),
+  summary,
+  label[for],
+  select:not(:disabled),
+  input[type='submit']:not(:disabled),
+  input[type='button']:not(:disabled),
+  input[type='reset']:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='file']:not(:disabled),
+  input[type='color']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role='button'][aria-disabled='true'] {
+    cursor: not-allowed;
   }
 }

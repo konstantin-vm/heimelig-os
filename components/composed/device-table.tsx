@@ -13,7 +13,6 @@
 //     non-admin even if the icon were exposed).
 
 import { useEffect, useId, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDown,
@@ -44,6 +43,15 @@ import {
   type DeviceListFilters,
   type DeviceListRow,
 } from "@/lib/queries/devices";
+import {
+  navigateOnRowClick,
+  navigateOnRowKey,
+} from "@/lib/utils/row-navigation";
+import {
+  buildPageSizeHandler,
+  PAGE_SIZE_OPTIONS,
+  usePageSizeParam,
+} from "@/lib/utils/url-page-size";
 import { cn } from "@/lib/utils";
 
 import { ConfirmDialog } from "./confirm-dialog";
@@ -59,6 +67,7 @@ type ReadonlyURLSearchParams = ReturnType<typeof useSearchParams>;
 function parseFilters(
   searchParams: URLSearchParams | ReadonlyURLSearchParams,
   searchTerm: string,
+  pageSize: number,
 ): {
   filters: DeviceListFilters;
   page: number;
@@ -90,7 +99,7 @@ function parseFilters(
     sort,
     dir,
     page,
-    pageSize: DEVICE_LIST_PAGE_SIZE,
+    pageSize,
   };
   return { filters, page, sort, dir };
 }
@@ -122,9 +131,11 @@ export function DeviceTable({
   const { data: role } = useAppRole();
   const isAdmin = role === "admin";
 
+  const pageSize = usePageSizeParam(searchParams, DEVICE_LIST_PAGE_SIZE);
+
   const { filters, page, sort, dir } = useMemo(
-    () => parseFilters(searchParams, searchTerm),
-    [searchParams, searchTerm],
+    () => parseFilters(searchParams, searchTerm, pageSize),
+    [searchParams, searchTerm, pageSize],
   );
 
   const { data, isLoading, isError, refetch, isFetching } = useArticleDevices(
@@ -139,7 +150,7 @@ export function DeviceTable({
   // open, mirroring the project-wide convention from articles realtime hooks.
   useArticleDevicesRealtime(articleId, channelKey);
 
-  const lastPage = Math.max(1, Math.ceil(total / DEVICE_LIST_PAGE_SIZE));
+  const lastPage = Math.max(1, Math.ceil(total / pageSize));
   useEffect(() => {
     if (!isLoading && total > 0 && page > lastPage) {
       const params = new URLSearchParams(searchParams.toString());
@@ -349,22 +360,25 @@ export function DeviceTable({
             ) : (
               rows.map((row) => {
                 const customer = customerLabel(row.customers);
+                const detailHref = `/devices/${row.id}`;
                 return (
                   <tr
                     key={row.id}
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`Gerät ${row.serial_number} öffnen`}
+                    onClick={(e) => navigateOnRowClick(e, router, detailHref)}
+                    onKeyDown={(e) => navigateOnRowKey(e, router, detailHref)}
                     className={cn(
-                      "border-b border-border last:border-b-0",
+                      "border-b border-border last:border-b-0 cursor-pointer",
                       "hover:bg-muted/30 focus-within:bg-muted/30",
+                      "focus-visible:bg-muted/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
                     )}
                   >
                     <td className="px-3 py-3 font-medium tabular-nums">
-                      <Link
-                        href={`/devices/${row.id}`}
-                        className="-mx-3 -my-3 block px-3 py-3 text-sm text-foreground focus-visible:underline focus-visible:outline-hidden"
-                        aria-label={`Gerät ${row.serial_number} öffnen`}
-                      >
+                      <span className="text-sm text-foreground">
                         {row.serial_number}
-                      </Link>
+                      </span>
                     </td>
                     <td className="px-3 py-3 font-mono text-xs text-muted-foreground">
                       {row.qr_code ?? "—"}
@@ -402,29 +416,23 @@ export function DeviceTable({
                       <span className="line-clamp-1">{row.notes ?? "—"}</span>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <div className="inline-flex items-center justify-end gap-1">
-                        <RowActions
-                          onView={() => router.push(`/devices/${row.id}`)}
-                          onEdit={() => onEdit(row.id)}
-                          ariaLabel={`Gerät ${row.serial_number} bearbeiten`}
-                          viewAriaLabel={`Gerät ${row.serial_number} anzeigen`}
-                        />
-                        {isAdmin ? (
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConfirmDelete(row);
-                            }}
-                            aria-label={`Gerät ${row.serial_number} ausmustern`}
-                            className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        ) : null}
-                      </div>
+                      <RowActions
+                        onEdit={() => onEdit(row.id)}
+                        triggerAriaLabel={`Aktionen für Gerät ${row.serial_number}`}
+                        editLabel="Gerät bearbeiten"
+                        items={
+                          isAdmin
+                            ? [
+                                {
+                                  label: "Ausmustern",
+                                  icon: <Trash2 className="h-4 w-4" aria-hidden />,
+                                  onSelect: () => setConfirmDelete(row),
+                                  destructive: true,
+                                },
+                              ]
+                            : undefined
+                        }
+                      />
                     </td>
                   </tr>
                 );
@@ -435,9 +443,15 @@ export function DeviceTable({
       </div>
       <TablePagination
         page={page}
-        pageSize={DEVICE_LIST_PAGE_SIZE}
+        pageSize={pageSize}
         total={total}
         onPageChange={pushPage}
+        onPageSizeChange={buildPageSizeHandler(
+          searchParams,
+          router,
+          DEVICE_LIST_PAGE_SIZE,
+        )}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
         itemNoun="Geräten"
       />
 

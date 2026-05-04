@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import Link from "next/link";
 
 import {
   ArticleDevicesCard,
@@ -12,13 +11,9 @@ import {
   PriceListCard,
 } from "@/components/composed";
 import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
+  PAGE_HEADER_PRIORITY,
+  useSetPageHeader,
+} from "@/lib/contexts/page-header-context";
 import { useAppRole } from "@/lib/hooks/use-app-role";
 
 export type ArticleProfileShellProps = {
@@ -39,6 +34,19 @@ export function ArticleProfileShell({
   const { data: role } = useAppRole();
   const showPrices = role !== "warehouse" && role !== "technician";
 
+  // Top bar: "Artikel / 1234 — Pflegebett (variant)" — entity label in the
+  // current-page slot. The auto-resolver can't know the article identifier,
+  // so the page provides the breadcrumb at override priority.
+  useSetPageHeader(
+    {
+      breadcrumb: [
+        { label: "Artikel", href: "/articles" },
+        { label },
+      ],
+    },
+    PAGE_HEADER_PRIORITY.override,
+  );
+
   // Card selector — Story 3.2 epic AC1 + AC2:
   //   * Rentable (or dual-mode rentable+sellable) → `<ArticleDevicesCard>`.
   //     For dual-mode articles the rental tracking takes precedence; the
@@ -53,20 +61,6 @@ export function ArticleProfileShell({
 
   return (
     <div className="flex flex-col gap-6">
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink asChild>
-              <Link href="/articles">Artikel</Link>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage>{label}</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
-
       <ArticleProfileHeader
         articleId={articleId}
         onEdit={() => setEditOpen(true)}
@@ -84,7 +78,7 @@ export function ArticleProfileShell({
               page can prerender independently. */}
           <Suspense
             fallback={
-              <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
+              <div className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
                 Geräte werden geladen…
               </div>
             }

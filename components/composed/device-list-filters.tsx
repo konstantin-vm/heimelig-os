@@ -145,7 +145,7 @@ export function DeviceListFilters({
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border bg-card p-3">
+    <div className="flex flex-col gap-3 rounded-lg border bg-card p-3">
       <div className="flex flex-col gap-1">
         <Label htmlFor="device-list-search" className="text-xs text-muted-foreground">
           Suche

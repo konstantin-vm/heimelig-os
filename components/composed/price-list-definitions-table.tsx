@@ -16,6 +16,7 @@ import type { PriceListDefinition } from "@/lib/validations/price-list-definitio
 
 import { PriceListDefinitionForm } from "./price-list-definition-form";
 import { ConfirmDialog } from "./confirm-dialog";
+import { RowActions, type RowActionItem } from "./row-actions";
 
 type ModalState =
   | { mode: "closed" }
@@ -83,69 +84,62 @@ export function PriceListDefinitionsTable() {
                   </td>
                 </tr>
               ) : (
-                (rows ?? []).map((row) => (
-                  <tr key={row.id} className="border-t">
-                    <td className="px-3 py-2 font-mono text-xs">{row.slug}</td>
-                    <td className="px-3 py-2">{row.name}</td>
-                    <td className="px-3 py-2 tabular-nums">{row.sort_order}</td>
-                    <td className="px-3 py-2">
-                      {row.is_active ? (
-                        <Badge variant="secondary">Aktiv</Badge>
-                      ) : (
-                        <Badge variant="outline">Inaktiv</Badge>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      {row.is_system ? (
-                        <Badge variant="outline" className="text-xs">
-                          System
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-xs">
-                          Eigene
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`${row.name} bearbeiten`}
-                          onClick={() => setModal({ mode: "edit", definition: row })}
-                          className="h-8 w-8"
-                        >
-                          <Pencil className="h-4 w-4" aria-hidden />
-                        </Button>
+                (rows ?? []).map((row) => {
+                  const items: RowActionItem[] = [
+                    {
+                      label: "Bearbeiten",
+                      icon: <Pencil className="h-4 w-4" aria-hidden />,
+                      onSelect: () =>
+                        setModal({ mode: "edit", definition: row }),
+                    },
+                  ];
+                  if (row.is_system) {
+                    items.push({
+                      label: "Deaktivieren (System-Preisliste gesperrt)",
+                      icon: <PowerOff className="h-4 w-4" aria-hidden />,
+                      onSelect: () => {},
+                      disabled: true,
+                    });
+                  } else if (row.is_active) {
+                    items.push({
+                      label: "Deaktivieren",
+                      icon: <PowerOff className="h-4 w-4" aria-hidden />,
+                      onSelect: () => setConfirmDeactivate(row),
+                      destructive: true,
+                    });
+                  }
+                  return (
+                    <tr key={row.id} className="border-t">
+                      <td className="px-3 py-2 font-mono text-xs">{row.slug}</td>
+                      <td className="px-3 py-2">{row.name}</td>
+                      <td className="px-3 py-2 tabular-nums">{row.sort_order}</td>
+                      <td className="px-3 py-2">
+                        {row.is_active ? (
+                          <Badge variant="secondary">Aktiv</Badge>
+                        ) : (
+                          <Badge variant="outline">Inaktiv</Badge>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
                         {row.is_system ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label="System-Preisliste — kann nicht deaktiviert werden"
-                            title="System-Preisliste — Slug- und Status-Änderung gesperrt"
-                            disabled
-                            className="h-8 w-8"
-                          >
-                            <PowerOff className="h-4 w-4" aria-hidden />
-                          </Button>
-                        ) : row.is_active ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`${row.name} deaktivieren`}
-                            onClick={() => setConfirmDeactivate(row)}
-                            className="h-8 w-8"
-                          >
-                            <PowerOff className="h-4 w-4" aria-hidden />
-                          </Button>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          <Badge variant="outline" className="text-xs">
+                            System
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">
+                            Eigene
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <RowActions
+                          triggerAriaLabel={`Aktionen für ${row.name}`}
+                          items={items}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

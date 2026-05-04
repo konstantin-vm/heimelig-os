@@ -149,7 +149,7 @@ export function DeviceStatusTransitionDialog({
       }}
     >
       <DialogContent
-        className="sm:max-w-md"
+        className="sm:max-w-2xl"
         onPointerDownOutside={(e) => {
           // Outside-click while pending is almost always accidental — keep
           // the user's note + dialog state until the mutation settles or

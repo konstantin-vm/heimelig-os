@@ -193,7 +193,7 @@ export function PriceListDefinitionForm({
       }}
     >
       <DialogContent
-        className="sm:max-w-md"
+        className="sm:max-w-2xl"
         onPointerDownOutside={(e) => {
           if (isPending) e.preventDefault();
         }}
@@ -217,7 +217,7 @@ export function PriceListDefinitionForm({
 
           <div className="flex flex-col gap-4 py-4">
             <div className="flex flex-col gap-1">
-              <Label htmlFor="pld-name">Name</Label>
+              <Label htmlFor="pld-name" required>Name</Label>
               <Input
                 id="pld-name"
                 value={state.name}
@@ -229,7 +229,7 @@ export function PriceListDefinitionForm({
             </div>
 
             <div className="flex flex-col gap-1">
-              <Label htmlFor="pld-slug">
+              <Label htmlFor="pld-slug" required={!slugReadOnly}>
                 Slug
                 {slugReadOnly ? (
                   <span className="ml-2 text-xs text-muted-foreground">

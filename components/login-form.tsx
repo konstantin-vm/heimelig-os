@@ -92,7 +92,7 @@ export function LoginForm({
           <form onSubmit={handleSubmit(onSubmit)} noValidate>
             <div className="flex flex-col gap-6">
               <div className="grid gap-2">
-                <Label htmlFor="email">E-Mail</Label>
+                <Label htmlFor="email" required>E-Mail</Label>
                 <Input
                   id="email"
                   type="email"
@@ -106,7 +106,7 @@ export function LoginForm({
                 )}
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="password">Passwort</Label>
+                <Label htmlFor="password" required>Passwort</Label>
                 <Input
                   id="password"
                   type="password"

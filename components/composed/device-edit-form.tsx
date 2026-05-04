@@ -500,7 +500,7 @@ export function DeviceEditForm({
       }}
     >
       <DialogContent
-        className={cn("max-h-[90vh] overflow-y-auto sm:max-w-2xl")}
+        className={cn("max-h-[90vh] overflow-y-auto sm:max-w-[1008px]")}
         onPointerDownOutside={(e) => {
           if (isPending) e.preventDefault();
         }}
@@ -898,9 +898,12 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <Label htmlFor={htmlFor} className="text-xs text-muted-foreground">
+      <Label
+        htmlFor={htmlFor}
+        className="text-xs text-muted-foreground"
+        required={required}
+      >
         {label}
-        {required ? <span aria-hidden> *</span> : null}
       </Label>
       {children}
       {error ? (

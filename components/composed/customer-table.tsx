@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useId, useMemo } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -34,6 +33,15 @@ import {
 } from "@/lib/constants/customer";
 import { SWISS_CANTONS, type SwissCantonCode } from "@/lib/constants/swiss-cantons";
 import { formatDate, formatPhone, formatPrimaryAddressLine } from "@/lib/utils/format";
+import {
+  navigateOnRowClick,
+  navigateOnRowKey,
+} from "@/lib/utils/row-navigation";
+import {
+  buildPageSizeHandler,
+  PAGE_SIZE_OPTIONS,
+  usePageSizeParam,
+} from "@/lib/utils/url-page-size";
 import { cn } from "@/lib/utils";
 
 import { BexioSyncBadge } from "./bexio-sync-badge";
@@ -86,6 +94,7 @@ function rowInsurer(row: CustomerListRow): InsuranceBadgeInsurer {
 function parseFilters(
   searchParams: URLSearchParams | ReadonlyURLSearchParams,
   searchTerm: string,
+  pageSize: number,
 ): {
   filters: CustomerListFilters;
   page: number;
@@ -142,7 +151,7 @@ function parseFilters(
     sort,
     dir,
     page,
-    pageSize: CUSTOMER_LIST_PAGE_SIZE,
+    pageSize,
   };
   return { filters, page, sort, dir };
 }
@@ -159,9 +168,11 @@ export function CustomerTable({
   const queryClient = useQueryClient();
   const channelSuffix = useId();
 
+  const pageSize = usePageSizeParam(searchParams, CUSTOMER_LIST_PAGE_SIZE);
+
   const { filters, page, sort, dir } = useMemo(
-    () => parseFilters(searchParams, searchTerm),
-    [searchParams, searchTerm],
+    () => parseFilters(searchParams, searchTerm, pageSize),
+    [searchParams, searchTerm, pageSize],
   );
 
   const { data, isLoading, isError, refetch, isFetching } =
@@ -172,7 +183,7 @@ export function CustomerTable({
   // If the URL points to a page beyond the last one (filter narrowed the set
   // OR the user pasted a stale link), redirect to the last page so the user
   // doesn't get stuck on an empty page with a vanished pagination footer.
-  const lastPage = Math.max(1, Math.ceil(total / CUSTOMER_LIST_PAGE_SIZE));
+  const lastPage = Math.max(1, Math.ceil(total / pageSize));
   useEffect(() => {
     if (!isLoading && total > 0 && page > lastPage) {
       const params = new URLSearchParams(searchParams.toString());
@@ -392,71 +403,82 @@ export function CustomerTable({
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className={cn(
-                    "border-b border-border last:border-b-0",
-                    "hover:bg-muted/30 focus-within:bg-muted/30",
-                  )}
-                >
-                  <td className="px-3 py-3">
-                    <Link
-                      href={`/customers/${row.id}`}
-                      className={cn(
-                        "flex flex-col gap-0.5 -mx-3 -my-3 px-3 py-3",
-                        "focus-visible:outline-hidden focus-visible:underline",
-                      )}
-                      aria-label={`${customerName(row)} öffnen`}
-                    >
-                      <span className="text-sm font-semibold text-foreground">
-                        {customerName(row)}
+              rows.map((row) => {
+                const detailHref = `/customers/${row.id}`;
+                const label = customerName(row);
+                return (
+                  <tr
+                    key={row.id}
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`${label} öffnen`}
+                    onClick={(e) => navigateOnRowClick(e, router, detailHref)}
+                    onKeyDown={(e) => navigateOnRowKey(e, router, detailHref)}
+                    className={cn(
+                      "border-b border-border last:border-b-0 cursor-pointer",
+                      "hover:bg-muted/30 focus-within:bg-muted/30",
+                      "focus-visible:bg-muted/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                    )}
+                  >
+                    <td className="px-3 py-3">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm font-semibold text-foreground">
+                          {label}
+                        </span>
+                        <span className="text-[12px] text-muted-foreground">
+                          {row.customer_number}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-sm text-foreground">
+                      <span className="line-clamp-2">
+                        {formatPrimaryAddressLine(row.primary_address)}
                       </span>
-                      <span className="text-[12px] text-muted-foreground">
-                        {row.customer_number}
-                      </span>
-                    </Link>
-                  </td>
-                  <td className="px-3 py-3 text-sm text-foreground">
-                    <span className="line-clamp-2">
-                      {formatPrimaryAddressLine(row.primary_address)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3 text-sm text-foreground tabular-nums">
-                    {formatPhone(row.phone)}
-                  </td>
-                  <td className="px-3 py-3 text-sm text-foreground">
-                    <InsuranceBadge insurer={rowInsurer(row)} />
-                  </td>
-                  {/* TODO(Epic 5) — wire device count from rental_contracts.
-                      Cell width stays in column reservation so Epic 5 wiring
-                      is a single-line query change. */}
-                  <td className="px-3 py-3 text-center text-sm text-muted-foreground">
-                    —
-                  </td>
-                  <td className="px-3 py-3 text-sm text-muted-foreground tabular-nums">
-                    {formatDate(row.created_at)}
-                  </td>
-                  <td className="px-3 py-3 text-sm">
-                    <BexioSyncBadge status={row.bexio_sync_status} />
-                  </td>
-                  <td className="px-3 py-3 text-right">
-                    <RowActions
-                      onView={() => router.push(`/customers/${row.id}`)}
-                      onEdit={() => onEdit(row.id)}
-                    />
-                  </td>
-                </tr>
-              ))
+                    </td>
+                    <td className="px-3 py-3 text-sm text-foreground tabular-nums">
+                      {formatPhone(row.phone)}
+                    </td>
+                    <td className="px-3 py-3 text-sm text-foreground">
+                      <InsuranceBadge insurer={rowInsurer(row)} />
+                    </td>
+                    {/* TODO(Epic 5) — wire device count from rental_contracts.
+                        Cell width stays in column reservation so Epic 5 wiring
+                        is a single-line query change. */}
+                    <td className="px-3 py-3 text-center text-sm text-muted-foreground">
+                      —
+                    </td>
+                    <td className="px-3 py-3 text-sm text-muted-foreground tabular-nums">
+                      {formatDate(row.created_at)}
+                    </td>
+                    <td className="px-3 py-3 text-sm">
+                      <BexioSyncBadge status={row.bexio_sync_status} />
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <RowActions
+                        onEdit={() => onEdit(row.id)}
+                        triggerAriaLabel={`Aktionen für ${label}`}
+                        editLabel="Kunde bearbeiten"
+                      />
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
       <TablePagination
         page={page}
-        pageSize={CUSTOMER_LIST_PAGE_SIZE}
+        pageSize={pageSize}
         total={total}
         onPageChange={pushPage}
+        onPageSizeChange={buildPageSizeHandler(
+          searchParams,
+          router,
+          CUSTOMER_LIST_PAGE_SIZE,
+        )}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        itemNoun="Kunden"
       />
     </Card>
   );

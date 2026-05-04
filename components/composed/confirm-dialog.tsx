@@ -54,7 +54,7 @@ export function ConfirmDialog({
       open={open}
       onOpenChange={pending ? () => {} : onOpenChange}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? (

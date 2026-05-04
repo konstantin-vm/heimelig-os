@@ -6,7 +6,9 @@ import { Menu } from "lucide-react";
 import type { NavItem } from "@/lib/constants/navigation";
 import type { AppRole } from "@/lib/constants/roles";
 import { BRAND_WORDMARK } from "@/lib/constants/brand";
+import { PageHeaderProvider } from "@/lib/contexts/page-header-context";
 
+import { DesktopTopBar } from "./desktop-top-bar";
 import { SidebarNav, type SidebarCounters } from "./sidebar-nav";
 import { TopBar } from "./top-bar";
 
@@ -30,6 +32,7 @@ export function DesktopShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
+    <PageHeaderProvider>
     <div className="flex min-h-svh w-full">
       <SidebarNav
         items={items}
@@ -66,8 +69,16 @@ export function DesktopShell({
             }
           />
         </div>
-        <main className="flex-1 px-4 py-6 lg:px-8 lg:py-8">{children}</main>
+        {/* Desktop-only top bar: breadcrumb + bell. Aligned with Pencil
+            S-005 / customer-profile design context (h-16, white, border-b). */}
+        <div className="hidden lg:block">
+          <DesktopTopBar items={items} />
+        </div>
+        <main className="flex-1 bg-secondary px-4 py-6 lg:px-8 lg:py-8">
+          {children}
+        </main>
       </div>
     </div>
+    </PageHeaderProvider>
   );
 }

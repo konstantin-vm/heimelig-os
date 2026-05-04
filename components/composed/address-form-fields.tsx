@@ -245,7 +245,7 @@ export function AddressFormFields({
           control={control}
           render={({ field }) => (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor={streetId}>Strasse *</Label>
+              <Label htmlFor={streetId} required>Strasse</Label>
               <Input
                 id={streetId}
                 {...field}
@@ -291,7 +291,7 @@ export function AddressFormFields({
           control={control}
           render={({ field }) => (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor={zipId}>PLZ *</Label>
+              <Label htmlFor={zipId} required>PLZ</Label>
               <Input
                 id={zipId}
                 {...field}
@@ -315,7 +315,7 @@ export function AddressFormFields({
           control={control}
           render={({ field }) => (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor={cityId}>Ort *</Label>
+              <Label htmlFor={cityId} required>Ort</Label>
               <Input
                 id={cityId}
                 {...field}
@@ -432,6 +432,7 @@ export function AddressFormFields({
           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
             <MapPin className="h-4 w-4 text-muted-foreground" aria-hidden />
             Adressvalidierung
+            <span aria-hidden className="text-destructive">*</span>
           </div>
           <Button
             type="button"
@@ -492,12 +493,6 @@ export function AddressFormFields({
           </div>
         ) : null}
 
-        {geoState.kind === "idle" ? (
-          <p className="text-xs text-muted-foreground">
-            Klick auf „Adresse prüfen“ lädt lat/lng über Google Maps. Daten
-            gehen direkt vom Browser an Google – kein Vercel-Hop.
-          </p>
-        ) : null}
       </div>
     </div>
   );

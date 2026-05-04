@@ -108,7 +108,7 @@ export function PrintLabelsBatchDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="sm:max-w-[864px]">
           <DialogHeader>
             <DialogTitle>Etiketten drucken</DialogTitle>
             <DialogDescription>

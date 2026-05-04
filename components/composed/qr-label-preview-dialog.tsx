@@ -276,7 +276,7 @@ export function QrLabelPreviewDialog({
   return (
     <Dialog open={open} onOpenChange={busy ? () => {} : onOpenChange}>
       <DialogContent
-        className="sm:max-w-2xl"
+        className="sm:max-w-[1008px]"
         // M11: Radix's outside-click + Escape close paths are NOT routed
         // through onOpenChange, so the busy gate above doesn't catch them.
         // Block them explicitly while a mutation is in flight.

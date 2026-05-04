@@ -68,21 +68,19 @@ async function ArticleProfileBody({ params }: { params: RouteParams }) {
   }`;
 
   return (
-    <PageShell title={label} backHref="/articles">
-      <ArticleProfileShell
-        articleId={data.id}
-        label={label}
-        isRentable={data.is_rentable}
-        isSellable={data.is_sellable}
-      />
-    </PageShell>
+    <ArticleProfileShell
+      articleId={data.id}
+      label={label}
+      isRentable={data.is_rentable}
+      isSellable={data.is_sellable}
+    />
   );
 }
 
 function ProfileSkeleton() {
   return (
     <PageShell title="Artikel" backHref="/articles">
-      <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
+      <div className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
         Daten werden geladen…
       </div>
     </PageShell>

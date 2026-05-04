@@ -65,7 +65,7 @@ async function CustomerProfileBody({ params }: { params: RouteParams }) {
 function ProfileSkeleton() {
   return (
     <PageShell title="Kunde" backHref="/customers">
-      <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
+      <div className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
         Daten werden geladen…
       </div>
     </PageShell>

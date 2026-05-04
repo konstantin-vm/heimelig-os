@@ -686,9 +686,12 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <Label htmlFor={htmlFor} className="text-xs text-muted-foreground">
+      <Label
+        htmlFor={htmlFor}
+        className="text-xs text-muted-foreground"
+        required={required}
+      >
         {label}
-        {required ? <span aria-hidden> *</span> : null}
       </Label>
       {children}
       {error ? (

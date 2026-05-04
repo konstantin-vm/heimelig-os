@@ -378,7 +378,7 @@ export function InsuranceDialog({
           }
         }}
       >
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[520px]">
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[780px]">
           <DialogHeader>
             <DialogTitle>{headerTitle}</DialogTitle>
             <DialogDescription>
@@ -397,7 +397,7 @@ export function InsuranceDialog({
               control={control}
               render={({ field }) => (
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor={insurerSelectId}>Krankenkasse *</Label>
+                  <Label htmlFor={insurerSelectId} required>Krankenkasse</Label>
                   <Select
                     value={field.value}
                     onValueChange={(v) => {
@@ -457,8 +457,8 @@ export function InsuranceDialog({
                 control={control}
                 render={({ field }) => (
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor={insurerFreetextId}>
-                      Name der Versicherung *
+                    <Label htmlFor={insurerFreetextId} required>
+                      Name der Versicherung
                     </Label>
                     <Input
                       id={insurerFreetextId}
@@ -486,7 +486,7 @@ export function InsuranceDialog({
               control={control}
               render={({ field }) => (
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor={insuranceTypeId}>Versicherungstyp *</Label>
+                  <Label htmlFor={insuranceTypeId} required>Versicherungstyp</Label>
                   <div
                     role="radiogroup"
                     id={insuranceTypeId}
@@ -531,9 +531,8 @@ export function InsuranceDialog({
               control={control}
               render={({ field }) => (
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor={insuranceNumberId}>
+                  <Label htmlFor={insuranceNumberId} required={isPartnerChoice}>
                     Versicherten-Nr.
-                    {isPartnerChoice ? " *" : ""}
                   </Label>
                   <Input
                     id={insuranceNumberId}

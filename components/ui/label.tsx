@@ -10,16 +10,30 @@ const labelVariants = cva(
   "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
 );
 
+type LabelProps = React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root> &
+  VariantProps<typeof labelVariants> & {
+    /** Render a destructive-coloured "*" after the label text. The asterisk
+     * is decorative (`aria-hidden`); a11y semantics still come from the
+     * underlying input's `required` / `aria-required` attribute. */
+    required?: boolean;
+  };
+
 const Label = React.forwardRef<
   React.ElementRef<typeof LabelPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root> &
-    VariantProps<typeof labelVariants>
->(({ className, ...props }, ref) => (
+  LabelProps
+>(({ className, required, children, ...props }, ref) => (
   <LabelPrimitive.Root
     ref={ref}
     className={cn(labelVariants(), className)}
     {...props}
-  />
+  >
+    {children}
+    {required ? (
+      <span aria-hidden className="ml-0.5 text-destructive">
+        *
+      </span>
+    ) : null}
+  </LabelPrimitive.Root>
 ));
 Label.displayName = LabelPrimitive.Root.displayName;
 

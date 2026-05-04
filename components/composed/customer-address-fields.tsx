@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, MapPin } from "lucide-react";
+import { CheckCircle2, Loader2, MapPin } from "lucide-react";
 import { Controller, type Control, type UseFormGetValues, type UseFormSetValue } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
@@ -170,7 +170,7 @@ export function CustomerAddressFields({
           control={control}
           render={({ field }) => (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="address-street">Strasse</Label>
+              <Label htmlFor="address-street" required>Strasse</Label>
               <Input
                 id="address-street"
                 {...field}
@@ -216,7 +216,7 @@ export function CustomerAddressFields({
           control={control}
           render={({ field }) => (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="address-zip">PLZ</Label>
+              <Label htmlFor="address-zip" required>PLZ</Label>
               <Input
                 id="address-zip"
                 {...field}
@@ -240,7 +240,7 @@ export function CustomerAddressFields({
           control={control}
           render={({ field }) => (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="address-city">Ort</Label>
+              <Label htmlFor="address-city" required>Ort</Label>
               <Input
                 id="address-city"
                 {...field}
@@ -355,6 +355,7 @@ export function CustomerAddressFields({
           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
             <MapPin className="h-4 w-4 text-muted-foreground" aria-hidden />
             Adressvalidierung
+            <span aria-hidden className="text-destructive">*</span>
           </div>
           <Button
             type="button"
@@ -414,20 +415,6 @@ export function CustomerAddressFields({
           </div>
         ) : null}
 
-        {geoState.kind === "idle" ? (
-          <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning-foreground">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <div className="flex flex-col gap-1">
-              <span className="font-medium">
-                Adresse muss validiert werden, bevor du speichern kannst.
-              </span>
-              <span className="text-warning-foreground/80">
-                Klick auf „Adresse prüfen“ lädt lat/lng über Google Maps. Daten
-                gehen direkt vom Browser an Google – kein Vercel-Hop.
-              </span>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );

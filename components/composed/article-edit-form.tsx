@@ -476,7 +476,7 @@ export function ArticleEditForm({
     >
       <DialogContent
         className={cn(
-          "max-h-[90vh] overflow-y-auto sm:max-w-2xl",
+          "max-h-[90vh] overflow-y-auto sm:max-w-[1008px]",
         )}
         onPointerDownOutside={(e) => {
           if (isPending) e.preventDefault();
@@ -936,9 +936,8 @@ type FieldProps = {
 function Field({ label, htmlFor, required, error, children }: FieldProps) {
   return (
     <div className="flex flex-col gap-1">
-      <Label htmlFor={htmlFor}>
+      <Label htmlFor={htmlFor} required={required}>
         {label}
-        {required ? <span className="ml-1 text-destructive">*</span> : null}
       </Label>
       {children}
       {error ? (

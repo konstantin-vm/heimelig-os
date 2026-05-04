@@ -537,7 +537,7 @@ export function AddressDialog({
           }
         }}
       >
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[520px]">
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[780px]">
           <DialogHeader>
             <DialogTitle>{headerTitle}</DialogTitle>
             <DialogDescription>
@@ -556,7 +556,7 @@ export function AddressDialog({
               control={control}
               render={({ field }) => (
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor={typePickerId}>Adresstyp *</Label>
+                  <Label htmlFor={typePickerId} required>Adresstyp</Label>
                   <AddressTypePicker
                     id={typePickerId}
                     value={

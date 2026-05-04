@@ -50,6 +50,7 @@ import type { CustomerCreate } from "@/lib/validations/customer";
 import { cn } from "@/lib/utils";
 
 import { CustomerAddressFields } from "./customer-address-fields";
+import { ConfirmDialog } from "./confirm-dialog";
 import type {
   CustomerFormMode,
   CustomerFormValues,
@@ -647,21 +648,22 @@ export function CustomerEditForm({
   // P13 (Round 3) — guard accidental ESC / backdrop click against discarding
   // user-entered customer data. Submit / explicit close button bypass the
   // guard by opting out (see `force` parameter pattern); for now we only
-  // confirm on dirty close.
+  // confirm on dirty close. The confirmation itself runs through the in-app
+  // ConfirmDialog (no native window.confirm) so it stays themed and a11y-correct.
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const handleDialogOpenChange = (next: boolean) => {
     if (next === open) return;
     if (!next && isDirty && !submitting) {
-      const ok = window.confirm(
-        "Ungespeicherte Änderungen verwerfen?",
-      );
-      if (!ok) return;
+      setDiscardConfirmOpen(true);
+      return;
     }
     onOpenChange(next);
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[520px]">
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[780px]">
         <DialogHeader>
           <DialogTitle>{headerTitle}</DialogTitle>
           <DialogDescription>{headerSubtitle}</DialogDescription>
@@ -735,7 +737,7 @@ export function CustomerEditForm({
             <Section title="Persönliche Daten">
               {isPrivate ? (
                 <>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[120px_1fr]">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Controller
                       name="salutation"
                       control={control}
@@ -782,7 +784,7 @@ export function CustomerEditForm({
                       rules={{ required: "Vorname ist erforderlich." }}
                       render={({ field }) => (
                         <div className="flex flex-col gap-1.5">
-                          <Label htmlFor="first_name">Vorname</Label>
+                          <Label htmlFor="first_name" required>Vorname</Label>
                           <Input
                             id="first_name"
                             {...field}
@@ -806,7 +808,7 @@ export function CustomerEditForm({
                       rules={{ required: "Nachname ist erforderlich." }}
                       render={({ field }) => (
                         <div className="flex flex-col gap-1.5">
-                          <Label htmlFor="last_name">Nachname</Label>
+                          <Label htmlFor="last_name" required>Nachname</Label>
                           <Input
                             id="last_name"
                             {...field}
@@ -849,7 +851,7 @@ export function CustomerEditForm({
                     rules={{ required: "Firmenname ist erforderlich." }}
                     render={({ field }) => (
                       <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="company_name">Firmenname</Label>
+                        <Label htmlFor="company_name" required>Firmenname</Label>
                         <Input
                           id="company_name"
                           {...field}
@@ -997,7 +999,7 @@ export function CustomerEditForm({
                   rules={{ required: "Telefon ist erforderlich." }}
                   render={({ field }) => (
                     <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="phone">Telefon</Label>
+                      <Label htmlFor="phone" required>Telefon</Label>
                       <Input
                         id="phone"
                         type="tel"
@@ -1191,6 +1193,20 @@ export function CustomerEditForm({
         )}
       </DialogContent>
     </Dialog>
+    <ConfirmDialog
+      open={discardConfirmOpen}
+      onOpenChange={setDiscardConfirmOpen}
+      title="Ungespeicherte Änderungen verwerfen?"
+      description="Deine Eingaben gehen verloren, wenn du jetzt schliesst."
+      confirmLabel="Verwerfen"
+      cancelLabel="Weiter bearbeiten"
+      variant="destructive"
+      onConfirm={() => {
+        setDiscardConfirmOpen(false);
+        onOpenChange(false);
+      }}
+    />
+    </>
   );
 }
 

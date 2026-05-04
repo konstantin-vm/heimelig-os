@@ -131,7 +131,7 @@ export function PriceListEditDialog({
       }}
     >
       <DialogContent
-        className="sm:max-w-md"
+        className="sm:max-w-2xl"
         onPointerDownOutside={(e) => {
           if (replace.isPending) e.preventDefault();
         }}
@@ -153,7 +153,7 @@ export function PriceListEditDialog({
 
           <div className="flex flex-col gap-4 py-4">
             <div className="flex flex-col gap-1">
-              <Label htmlFor="price-amount">Betrag (CHF)</Label>
+              <Label htmlFor="price-amount" required>Betrag (CHF)</Label>
               <Input
                 id="price-amount"
                 type="text"
@@ -168,7 +168,7 @@ export function PriceListEditDialog({
             </div>
 
             <div className="flex flex-col gap-1">
-              <Label htmlFor="price-valid-from">Gültig ab</Label>
+              <Label htmlFor="price-valid-from" required>Gültig ab</Label>
               <Input
                 id="price-valid-from"
                 type="date"

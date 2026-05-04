@@ -15,7 +15,7 @@ import { Suspense, useState } from "react";
 import {
   ArticleEditForm,
   InventoryFilters,
-  InventoryGrid,
+  InventoryTable,
   PageHeader,
   PageShell,
 } from "@/components/composed";
@@ -59,7 +59,7 @@ function InventoryPageBody() {
         onSearchTermChange={setSearchTerm}
       />
 
-      <InventoryGrid
+      <InventoryTable
         searchTerm={searchTerm}
         onClearSearchTerm={() => setSearchTerm("")}
         onConfigureThresholds={(articleId) =>

@@ -152,7 +152,7 @@ export function CustomerListFilters({
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border bg-card p-3 sm:flex-row sm:flex-wrap sm:items-end">
+    <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:flex-wrap sm:items-end">
       <div className="flex flex-1 min-w-[240px] flex-col gap-1">
         <Label htmlFor="customer-list-search" className="text-xs text-muted-foreground">
           Suche

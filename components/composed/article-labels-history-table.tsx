@@ -17,6 +17,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RowActions } from "./row-actions";
 import { useAppRole } from "@/lib/hooks/use-app-role";
 import {
   qrLabelRunStatusValues,
@@ -33,7 +34,8 @@ import { ConfirmDialog } from "./confirm-dialog";
 import { StatusBadge } from "./status-badge";
 import { TablePagination } from "./table-pagination";
 
-const PAGE_SIZE = 25;
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 // Swiss display format (date+time): "DD.MM.YYYY HH:mm" in Europe/Zurich
 // to avoid the 23:00→00:00 roll-over off-by-one that Story 3.2 hit.
@@ -70,6 +72,7 @@ export function ArticleLabelsHistoryTable() {
   const isAdmin = role === "admin";
 
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [searchInput, setSearchInput] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     "all" | QrLabelRunStatus
@@ -83,9 +86,9 @@ export function ArticleLabelsHistoryTable() {
           ? undefined
           : ([statusFilter] as ReadonlyArray<QrLabelRunStatus>),
       page,
-      pageSize: PAGE_SIZE,
+      pageSize,
     }),
-    [searchInput, statusFilter, page],
+    [searchInput, statusFilter, page, pageSize],
   );
 
   const { data, isLoading, error } = useArticleLabelRunsList(filters);
@@ -188,7 +191,7 @@ export function ArticleLabelsHistoryTable() {
           Noch keine QR-Etiketten gedruckt.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-md border bg-card">
+        <div className="overflow-x-auto rounded-lg border bg-card">
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/50 text-left">
               <tr>
@@ -251,36 +254,31 @@ export function ArticleLabelsHistoryTable() {
                       </div>
                     </td>
                     <td className="px-3 py-2 align-middle">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => openPdf(row.storage_path)}
-                          aria-label="Etikett-PDF öffnen"
-                          className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                          disabled={signedUrl.isPending}
-                        >
-                          <Eye className="h-4 w-4" aria-hidden />
-                        </Button>
-                        {isAdmin ? (
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            onClick={() =>
-                              setConfirmDelete({
-                                id: row.id,
-                                storage_path: row.storage_path,
-                              })
-                            }
-                            aria-label="Druck-Eintrag löschen"
-                            className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" aria-hidden />
-                          </Button>
-                        ) : null}
-                      </div>
+                      <RowActions
+                        triggerAriaLabel="Aktionen für Druck-Eintrag"
+                        items={[
+                          {
+                            label: "Etikett-PDF öffnen",
+                            icon: <Eye className="h-4 w-4" aria-hidden />,
+                            onSelect: () => openPdf(row.storage_path),
+                            disabled: signedUrl.isPending,
+                          },
+                          ...(isAdmin
+                            ? [
+                                {
+                                  label: "Eintrag löschen",
+                                  icon: <Trash2 className="h-4 w-4" aria-hidden />,
+                                  onSelect: () =>
+                                    setConfirmDelete({
+                                      id: row.id,
+                                      storage_path: row.storage_path,
+                                    }),
+                                  destructive: true,
+                                },
+                              ]
+                            : []),
+                        ]}
+                      />
                     </td>
                   </tr>
                 );
@@ -289,9 +287,14 @@ export function ArticleLabelsHistoryTable() {
           </table>
           <TablePagination
             page={page}
-            pageSize={PAGE_SIZE}
+            pageSize={pageSize}
             total={data?.total ?? 0}
             onPageChange={setPage}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setPage(1);
+            }}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
             itemNoun="Druckläufe"
           />
         </div>

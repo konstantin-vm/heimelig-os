@@ -321,7 +321,7 @@ export function ContactDialog({
           }
         }}
       >
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[520px]">
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[780px]">
           <DialogHeader>
             <DialogTitle>{headerTitle}</DialogTitle>
             <DialogDescription>
@@ -336,7 +336,7 @@ export function ContactDialog({
           >
             {/* Rolle */}
             <section className="flex flex-col gap-2">
-              <Label htmlFor="contact-role">Rolle *</Label>
+              <Label htmlFor="contact-role" required>Rolle</Label>
               <Controller
                 name="role"
                 control={control}
@@ -392,7 +392,7 @@ export function ContactDialog({
             </section>
 
             {/* Anrede + Titel */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[140px_1fr]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Controller
                 name="salutation"
                 control={control}
@@ -443,7 +443,7 @@ export function ContactDialog({
                 rules={{ required: "Vorname ist erforderlich" }}
                 render={({ field }) => (
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="contact-first-name">Vorname *</Label>
+                    <Label htmlFor="contact-first-name" required>Vorname</Label>
                     <Input
                       id="contact-first-name"
                       autoComplete="given-name"
@@ -464,7 +464,7 @@ export function ContactDialog({
                 rules={{ required: "Nachname ist erforderlich" }}
                 render={({ field }) => (
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="contact-last-name">Nachname *</Label>
+                    <Label htmlFor="contact-last-name" required>Nachname</Label>
                     <Input
                       id="contact-last-name"
                       autoComplete="family-name"
@@ -505,7 +505,7 @@ export function ContactDialog({
                 rules={{ required: "Telefon ist erforderlich" }}
                 render={({ field }) => (
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="contact-phone">Telefon *</Label>
+                    <Label htmlFor="contact-phone" required>Telefon</Label>
                     <Input
                       id="contact-phone"
                       type="tel"

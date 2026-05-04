@@ -106,7 +106,7 @@ async function BexioSettingsBody({ searchParams }: PageProps) {
 function BexioSkeleton() {
   return (
     <PageShell title="bexio-Verbindung" backHref="/settings">
-      <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
+      <div className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
         Wird geladen…
       </div>
     </PageShell>

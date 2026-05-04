@@ -59,3 +59,28 @@ export const deviceIsNewLabels: Record<"true" | "false", string> = {
   true: "Neu",
   false: "Gebraucht",
 };
+
+// Story 3.3 — directed state-machine matrix mirrored from migration 00049.
+// Single source of truth for the UI; the database has its own copy hard-coded
+// inside `transition_device_status()`. Intentional duplication — the UI reads
+// optimistically (so we don't round-trip just to render the next-status
+// buttons), the RPC re-validates as the authoritative gate. Both copies
+// MUST stay in sync; the `Record<DeviceStatus, …>` type forces exhaustive
+// coverage at compile time so a new status added to `deviceStatusValues`
+// fails to type-check until this map gets a row for it.
+export const deviceStatusTransitions: Record<
+  (typeof deviceStatusValues)[number],
+  ReadonlyArray<(typeof deviceStatusValues)[number]>
+> = {
+  available: ["rented", "repair", "sold"],
+  rented: ["cleaning"],
+  cleaning: ["available", "repair"],
+  repair: ["available", "sold"],
+  sold: [],
+};
+
+export function isTerminalDeviceStatus(
+  status: (typeof deviceStatusValues)[number],
+): boolean {
+  return deviceStatusTransitions[status].length === 0;
+}

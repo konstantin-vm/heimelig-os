@@ -175,10 +175,13 @@ export function useArticlesList(filters: ArticleListFilters = {}) {
         // the seq-scan is acceptable.
         // Escape SQL LIKE wildcards (`%`, `_`) plus characters that have
         // special meaning to PostgREST `.or()` parsing (`,`, `(`, `)`,
-        // and the backslash itself). Cap the input at 100 chars to avoid
-        // PostgREST 414 (URI Too Long).
+        // `*`, `:` — the latter two added in Story 3.4 closing the
+        // Story-3.2 review deferred-work line 249) and the backslash
+        // itself. Cap the input at 100 chars to avoid PostgREST 414
+        // (URI Too Long). Same regex shape used by `lib/queries/devices.ts`
+        // and `lib/queries/inventory.ts`.
         const trimmed = search.slice(0, 100);
-        const escaped = trimmed.replace(/[%_,()\\]/g, "\\$&");
+        const escaped = trimmed.replace(/[%_,()\\*:]/g, "\\$&");
         query = query.or(
           [
             `name.ilike.%${escaped}%`,

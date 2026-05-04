@@ -651,7 +651,8 @@ export function DeviceEditForm({
                     >
                       {deviceStatusLabels[device.status]}{" "}
                       <span className="text-xs">
-                        — Statuswechsel sind in Story 3.3 freigeschaltet.
+                        — Statuswechsel über die Aktion „Status ändern“ im
+                        Geräteprofil.
                       </span>
                     </p>
                   </Field>

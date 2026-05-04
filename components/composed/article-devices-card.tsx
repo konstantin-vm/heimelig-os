@@ -15,7 +15,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Boxes, Plus } from "lucide-react";
+import { Boxes, Plus, Printer } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -26,6 +26,7 @@ import { CountBadge } from "./count-badge";
 import { DeviceEditForm } from "./device-edit-form";
 import { DeviceListFilters } from "./device-list-filters";
 import { DeviceTable } from "./device-table";
+import { PrintLabelsBatchDialog } from "./print-labels-batch-dialog";
 
 export type ArticleDevicesCardProps = {
   articleId: string;
@@ -50,6 +51,8 @@ export function ArticleDevicesCard({ articleId }: ArticleDevicesCardProps) {
     | { kind: "closed" }
   >({ kind: "closed" });
 
+  const [printOpen, setPrintOpen] = useState(false);
+
   const open = editMode.kind !== "closed";
 
   const props = useMemo(
@@ -71,6 +74,16 @@ export function ArticleDevicesCard({ articleId }: ArticleDevicesCardProps) {
         </div>
         {canCreate ? (
           <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setPrintOpen(true)}
+              aria-label="Etiketten für diesen Artikel drucken"
+            >
+              <Printer className="h-4 w-4" aria-hidden />
+              Etiketten drucken
+            </Button>
             <Button asChild size="sm" variant="outline">
               <Link
                 href={`/articles/batch?articleId=${articleId}`}
@@ -116,6 +129,14 @@ export function ArticleDevicesCard({ articleId }: ArticleDevicesCardProps) {
           mode="edit"
           deviceId={editMode.deviceId}
           {...props}
+        />
+      ) : null}
+
+      {canCreate ? (
+        <PrintLabelsBatchDialog
+          articleId={articleId}
+          open={printOpen}
+          onOpenChange={setPrintOpen}
         />
       ) : null}
     </Card>

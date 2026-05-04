@@ -11,7 +11,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Pencil, Printer, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,8 @@ import { useAppRole } from "@/lib/hooks/use-app-role";
 import { useDevice, useDeviceSoftDelete } from "@/lib/queries/devices";
 
 import { ConfirmDialog } from "./confirm-dialog";
+import { DeviceStatusTransitionDialog } from "./device-status-transition-dialog";
+import { QrLabelPreviewDialog } from "./qr-label-preview-dialog";
 import { StatusBadge } from "./status-badge";
 
 export type DeviceProfileHeaderProps = {
@@ -35,7 +37,17 @@ export function DeviceProfileHeader({
   const { data: device, isLoading } = useDevice(deviceId);
   const { data: role } = useAppRole();
   const isAdmin = role === "admin";
+  // Admin / office / warehouse can transition status. Technician + anyone
+  // without a resolved role is hidden from the action — the SECURITY DEFINER
+  // RPC re-validates as the authoritative gate (raises 42501 for any other
+  // role) per Story 3.3 AC7.
+  const canTransitionStatus =
+    role === "admin" || role === "office" || role === "warehouse";
+  // Same role gate for QR label print (Story 3.7 AC1 + AC-RLS).
+  const canPrintLabel = canTransitionStatus;
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [transitionOpen, setTransitionOpen] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
 
   const softDelete = useDeviceSoftDelete({
     onSuccess: (data) => {
@@ -87,6 +99,19 @@ export function DeviceProfileHeader({
         role="group"
         aria-label="Geräteaktionen"
       >
+        {canTransitionStatus ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setTransitionOpen(true)}
+            aria-label="Status ändern"
+            disabled={isLoading || !device}
+          >
+            <ArrowRightLeft className="h-4 w-4" aria-hidden />
+            Status ändern
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
@@ -98,6 +123,19 @@ export function DeviceProfileHeader({
           <Pencil className="h-4 w-4" aria-hidden />
           Bearbeiten
         </Button>
+        {canPrintLabel ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setPrintOpen(true)}
+            aria-label="Etikett drucken"
+            disabled={isLoading || !device}
+          >
+            <Printer className="h-4 w-4" aria-hidden />
+            Etikett drucken
+          </Button>
+        ) : null}
         {isAdmin ? (
           <Button
             type="button"
@@ -113,6 +151,29 @@ export function DeviceProfileHeader({
           </Button>
         ) : null}
       </div>
+
+      {device && canTransitionStatus ? (
+        <DeviceStatusTransitionDialog
+          device={{
+            id: device.id,
+            status: device.status,
+            article_id: device.article_id,
+            serial_number: device.serial_number,
+          }}
+          open={transitionOpen}
+          onOpenChange={setTransitionOpen}
+        />
+      ) : null}
+
+      {device && canPrintLabel ? (
+        <QrLabelPreviewDialog
+          open={printOpen}
+          onOpenChange={setPrintOpen}
+          mode="single"
+          deviceIds={[device.id]}
+          articleId={device.article_id}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={deleteOpen}

@@ -66,6 +66,16 @@ export const DESKTOP_NAV: readonly NavItem[] = [
         roles: ["admin", "office", "warehouse"],
       },
       {
+        // Story 3.4 — operational inventory grid (S-010 NEW). Sibling to
+        // the Story-3.1 `/articles` catalog table; sub-nav grouping under
+        // the existing "Artikel" parent rather than a new top-level entry
+        // (D-ROUTE decision 2026-05-04).
+        key: "articles.inventory",
+        labelDe: "Inventar",
+        href: "/articles/inventory",
+        roles: ["admin", "office", "warehouse"],
+      },
+      {
         key: "articles.devices",
         labelDe: "Geräte",
         href: "/articles/devices",
@@ -84,10 +94,18 @@ export const DESKTOP_NAV: readonly NavItem[] = [
         roles: ["admin", "warehouse"],
       },
       {
-        key: "articles.scan",
+        // Renamed from `articles.scan` (`/articles/scan`) in Story 3.7 — the
+        // entry was misleadingly named "scan" but always pointed at the
+        // desktop label-print page (the *mobile* PWA scan is Story 3.5's
+        // own route under the technician shell). `office` added so office
+        // users can re-print labels for service-call follow-ups too. The
+        // dev-time `assertNavHrefsCoverAllowedPaths` guard re-runs on boot
+        // and verifies `/articles/labels` is still under `/articles` for
+        // each listed role.
+        key: "articles.labels",
         labelDe: "QR-Etiketten",
-        href: "/articles/scan",
-        roles: ["admin", "warehouse"],
+        href: "/articles/labels",
+        roles: ["admin", "office", "warehouse"],
       },
     ],
   },

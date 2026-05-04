@@ -7,9 +7,16 @@
 //   - `useArticleDevices` / `useDevice` are server-side filtered + paged.
 //   - `useDeviceCreate` / `useDeviceUpdate` strip `status` from the payload —
 //     direct UPDATE on `devices.status` is forbidden by convention
-//     (CLAUDE.md anti-pattern). Story 3.3 ships `transition_device_status`
-//     as the SECURITY DEFINER RPC; the Zod `.superRefine` in
+//     (CLAUDE.md anti-pattern). The Zod `.superRefine` in
 //     `lib/validations/device.ts` is the second tripwire.
+//   - `useDeviceStatusTransition` (Story 3.3) is the only sanctioned write
+//     path on `devices.status`. RLS pairs with column-level
+//     `revoke update (status)` (migration 00049) so direct UPDATEs on the
+//     column are rejected at the DB with `42501` insufficient_privilege —
+//     the JS guards above are a defense-in-depth tripwire that surface the
+//     mistake earlier in the dev loop. The hook calls
+//     `supabase.rpc('transition_device_status', ...)`; the SECURITY DEFINER
+//     RPC validates the directed state machine + role-gates the caller.
 //   - `useDeviceSoftDelete` writes `retired_at = current_date` (Europe/Zurich)
 //     instead of hard-deleting the row.
 //   - Realtime subscriptions invalidate the relevant cache slots on
@@ -41,6 +48,7 @@ import { logError } from "@/lib/utils/error-log";
 import { uuidSchema } from "@/lib/validations/common";
 import {
   deviceConditionSchema,
+  deviceSchema,
   deviceStatusSchema,
   type BatchRegisterInput,
   type Device,
@@ -284,11 +292,14 @@ export function useArticleDevices(
           if (search.length > 0) {
             // Same escape rules as Story 3.1's article search:
             //   * `%`, `_` — SQL LIKE wildcards
-            //   * `,`, `(`, `)` — PostgREST `.or()` separators
+            //   * `,`, `(`, `)`, `*`, `:` — PostgREST `.or()` separators / meta-chars
             //   * `\` — escape character itself
-            // Cap to 100 chars to avoid PostgREST 414 (URI Too Long).
+            // `*` + `:` added in Story 3.4 closing Story-3.2 review
+            // deferred-work line 249. Cap to 100 chars to avoid PostgREST
+            // 414 (URI Too Long). Same regex shape used by
+            // `lib/queries/articles.ts` and `lib/queries/inventory.ts`.
             const trimmed = search.slice(0, DEVICE_SEARCH_MAX_LEN);
-            const escaped = trimmed.replace(/[%_,()\\]/g, "\\$&");
+            const escaped = trimmed.replace(/[%_,()\\*:]/g, "\\$&");
             query = query.or(
               [
                 `serial_number.ilike.%${escaped}%`,
@@ -485,23 +496,59 @@ function mapDeviceMutationError(code: string | null | undefined): string | null 
     case "23503":
       return "Der gewählte Artikel / Standort / Lieferant existiert nicht.";
     case "42501":
-      return "Sie haben keine Berechtigung für diese Aktion.";
+      // 42501 covers both the SECURITY DEFINER role gate inside
+      // `transition_device_status` (technician + anon raise this) and the
+      // column-level revoke on `devices.status` (any direct UPDATE on the
+      // column raises this regardless of role). Both surfaces map to the
+      // same friendly message — distinguishing in the UI would not change
+      // the user's next step.
+      return "Keine Berechtigung für diese Aktion.";
+    case "23514":
+      // Used by `transition_device_status` for invalid transitions and
+      // no-op (X → X) attempts. The RPC's German message is the binding
+      // text; the friendly fallback here covers the case where the hook
+      // can't surface the message verbatim.
+      return "Diese Status-Änderung ist nicht erlaubt.";
     case "22023":
-      // Story 3.6 — `batch_register_devices` raises this for invalid input
-      // (quantity bounds, article/warehouse/supplier eligibility). The RPC's
-      // German message carries the binding text; this is the fallback.
-      return "Ungültige Eingabe für Sammelregistrierung.";
+      // Shared between `transition_device_status` (argument guards on
+      // `p_device_id` / `p_new_status` / `p_context`) and Story 3.6's
+      // `batch_register_devices` (quantity bounds, eligibility). Both
+      // RPCs author their own German messages — the per-RPC verbatim
+      // regex in each hook surfaces the precise reason; this fallback is
+      // intentionally generic so neither caller mis-attributes the other.
+      return "Ungültige Eingabe — bitte Werte prüfen.";
     case "P0001":
       // Generic PL/pgSQL `raise exception` without an explicit errcode.
-      // Story 3.6 RPC uses specific codes (42501, 22023), but defensive
-      // mapping here covers any future RPC that raises with the default.
-      return "Sammelregistrierung abgelehnt — bitte Eingaben prüfen.";
+      // Defensive mapping for any future RPC that raises with the default
+      // (today: nothing relies on this path).
+      return "Aktion abgelehnt — bitte Eingaben prüfen.";
     case "PGRST116":
       return "Aktualisierung betraf 0 Zeilen — möglicherweise fehlt die RLS-Berechtigung.";
+    case "57014":
+      // PostgREST `statement_timeout` (default 8s on Supabase). Long-running
+      // RPCs (e.g. `transition_device_status` waiting on a `for update`
+      // lock held by another session) eventually surface this. Friendly
+      // German hides the cancellation-specific PG noise.
+      return "Vorgang dauerte zu lange — bitte erneut versuchen.";
+    case "40P01":
+      // Deadlock detected. PG aborts one of the two transactions. Same
+      // user-facing recovery as 57014 — try again.
+      return "Datenbank-Konflikt — bitte erneut versuchen.";
+    case "08006":
+      // Connection failure mid-RPC. User can recover by retrying once
+      // connectivity is back.
+      return "Verbindung zur Datenbank unterbrochen — bitte erneut versuchen.";
     default:
       return null;
   }
 }
+
+// Last-resort message when the PG error code is not in the
+// `mapDeviceMutationError` table and the hook's verbatim-message regex
+// did not catch the raw text. Avoids forwarding raw English/German PG
+// strings (which may contain relation/column names) to the UI.
+const DEVICE_MUTATION_GENERIC_FAILURE =
+  "Aktion fehlgeschlagen — bitte erneut versuchen oder die Seite neu laden.";
 
 export type CreateDeviceInput = {
   device: DeviceCreate;
@@ -627,6 +674,119 @@ export function useDeviceUpdate(
           queryKey: deviceKeys.byArticleAll(data.article_id),
         });
       }
+      return options?.onSuccess?.(...args);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// useDeviceStatusTransition — the only sanctioned write path on
+// `devices.status` (Story 3.3). Pairs with column-level
+// `revoke update (status) on public.devices from authenticated;` (00049),
+// so any direct UPDATE on the column from authenticated callers — including
+// office + warehouse who otherwise hold full-row UPDATE — is rejected at
+// the DB with `42501`. The SECURITY DEFINER RPC pierces the revoke and
+// validates the directed state machine (mirrors `deviceStatusTransitions`
+// in `lib/constants/device.ts`).
+// ---------------------------------------------------------------------------
+
+export type TransitionDeviceStatusInput = {
+  deviceId: string;
+  newStatus: Device["status"];
+  context?: Record<string, unknown>;
+};
+
+export function useDeviceStatusTransition(
+  options?: UseMutationOptions<Device, Error, TransitionDeviceStatusInput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ deviceId, newStatus, context }: TransitionDeviceStatusInput) => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc("transition_device_status", {
+        p_device_id: deviceId,
+        p_new_status: newStatus,
+        p_context: (context ?? {}) as never,
+      });
+
+      if (error) {
+        await logError(
+          {
+            errorType: "DB_FUNCTION",
+            severity: "error",
+            source: "device-status-transition",
+            // No PII — IDs + structured codes only (CLAUDE.md / Story 1.5 AC14).
+            // Note: `error.message` is not forwarded; PG often embeds row
+            // data ("Key (id)=(...)") which would leak through error_log.
+            message: "device status transition failed",
+            details: {
+              device_id: deviceId,
+              new_status: newStatus,
+              code: error.code ?? null,
+            },
+            entity: "devices",
+            entityId: deviceId,
+          },
+          supabase,
+        );
+        // Prefer the verbatim PG message when the RPC raised a German
+        // user-facing string from inside `transition_device_status` — the
+        // function body authors these so they can be surfaced as-is. The
+        // regex covers every `raise` site in migration 00049: state-machine
+        // violations, no-op attempts, role-gate denials, invalid target
+        // status, missing/retired device, NULL `p_device_id`, non-object
+        // `p_context`. For other PG error codes, fall back to the friendly
+        // map. Last resort: a generic German message — never the raw
+        // PostgrestError.message, which may embed relation/column names.
+        if (
+          typeof error.message === "string" &&
+          /^(Ungültiger Status-Übergang|Status ist bereits|Keine Berechtigung|Ungültiger Zielstatus|Gerät .* nicht gefunden|p_device_id darf nicht NULL|p_context muss)/u.test(
+            error.message,
+          )
+        ) {
+          throw new Error(error.message);
+        }
+        const friendly = mapDeviceMutationError(error.code);
+        throw new Error(friendly ?? DEVICE_MUTATION_GENERIC_FAILURE);
+      }
+
+      // Hard parse — Story 3.3 AC5 mandates `deviceSchema.parse(...)` as a
+      // runtime guard against DB drift. We don't `throw` the raw ZodError
+      // (would bubble Zod's English issue list to the user) but instead
+      // surface a friendly German message so the dialog stays usable. The
+      // structured drift detail still lands in `error_log` for ops.
+      const parsed = deviceSchema.safeParse(data);
+      if (!parsed.success) {
+        await logError(
+          {
+            errorType: "VALIDATION",
+            severity: "error",
+            source: "device-status-transition",
+            message: "device status transition shape drift",
+            details: {
+              device_id: deviceId,
+              issueCount: parsed.error.issues.length,
+            },
+            entity: "devices",
+            entityId: deviceId,
+          },
+          supabase,
+        );
+        throw new Error(
+          "Unerwartete Antwort vom Server — bitte Seite neu laden.",
+        );
+      }
+      return parsed.data;
+    },
+    ...options,
+    onSuccess: (...args) => {
+      const [data, vars] = args;
+      queryClient.invalidateQueries({ queryKey: deviceKeys.detail(vars.deviceId) });
+      queryClient.invalidateQueries({ queryKey: deviceKeys.auditAll(vars.deviceId) });
+      queryClient.invalidateQueries({
+        queryKey: deviceKeys.byArticleAll(data.article_id),
+      });
+      queryClient.invalidateQueries({ queryKey: deviceKeys.lists() });
       return options?.onSuccess?.(...args);
     },
   });
@@ -904,10 +1064,9 @@ export function useDeviceRealtime(id: string | null, instanceKey: string) {
 // Story 3.6 — Batch device registration mutation.
 //
 // Calls the SECURITY DEFINER RPC `public.batch_register_devices` (migration
-// 00052, re-emitted by 00054 with review fixes). The function generates
-// serial_numbers under a per-article advisory lock + atomic N-row INSERT,
-// returning `{id, serial_number}[]` for the toast + downstream Story 3.7
-// (label PDF) hook.
+// 00052). The function generates serial_numbers under a per-article advisory
+// lock + atomic N-row INSERT, returning `{id, serial_number}[]` for the toast
+// + downstream Story 3.7 (label PDF) hook.
 //
 // Privilege: admin / office / warehouse — the RPC role-gates internally and
 // raises 42501 otherwise. Warehouse callers' acquisition_price is silently
@@ -965,6 +1124,7 @@ export function useBatchRegisterDevices(
         // error code (e.g. 23505 unique_violation, where PG emits an
         // English "duplicate key value" message that would surface ugly
         // schema details), fall through to the friendly German fallback.
+        // Mirrors the `useDeviceStatusTransition` pattern (lines ~712).
         if (
           typeof error.message === "string" &&
           /^(Anzahl muss|Artikel ist nicht|Lager ist nicht|Lieferant ist nicht|Sammelregistrierung erfordert|Serial-Bereich für|p_article_id darf nicht NULL)/u.test(

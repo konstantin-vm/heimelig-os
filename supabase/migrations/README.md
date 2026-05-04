@@ -69,6 +69,19 @@ NNNNN_description.sql
 
 Always: never edit an applied migration. Write a follow-up migration instead.
 
+### Column-lock checklist for `public.devices` (Story 3.3 follow-up)
+
+Migration 00049 ships the canonical column-lock pattern for `devices.status`: it `revoke`s the table-level UPDATE from `authenticated` and re-`grant`s an explicit per-column allowlist (every column EXCEPT `status`). Subsequent state-machine columns (orders, contracts, invoices, tours) follow the same shape.
+
+**When your migration `ALTER TABLE public.devices ADD COLUMN <new_col> ...`:** append the matching re-grant in the same migration, OR your column will be silently *non-writable* by office/warehouse the moment the migration applies. Mirror this pattern for any other table that follows the column-lock convention (see `00049_transition_device_status.sql:172–195` for the canonical shape).
+
+```sql
+-- After the ADD COLUMN:
+grant update (<new_col>) on public.devices to authenticated;
+```
+
+If the column is itself state-machine-locked (a future "always via SECURITY DEFINER RPC"), do NOT add it to the grant list — instead document the lock + the sanctioned RPC name in this README, and add a CLAUDE.md anti-pattern entry mirroring the `devices.status` / `devices.qr_code` precedents.
+
 ## Applying migrations
 
 Cloud-only — no local Postgres. The Supabase project (`zjrlpczyljgcibhdqccp`, Zürich) is the single environment until Go-Live.

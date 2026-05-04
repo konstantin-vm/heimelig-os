@@ -1246,6 +1246,20 @@ export type Database = {
             referencedRelation: "technician_articles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "qr_label_runs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qr_label_runs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
         ]
       }
       suppliers: {

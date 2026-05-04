@@ -151,3 +151,18 @@ export {
   DeviceEditForm,
   type DeviceEditFormProps,
 } from "./device-edit-form";
+
+// Story 3.4 — Inventory grid components
+export {
+  InventoryFilters,
+  parseInventoryFiltersFromSearchParams,
+  type InventoryFiltersProps,
+} from "./inventory-filters";
+export {
+  InventoryGrid,
+  type InventoryGridProps,
+} from "./inventory-grid";
+export {
+  InventoryCard,
+  type InventoryCardProps,
+} from "./inventory-card";

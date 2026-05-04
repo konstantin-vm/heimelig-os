@@ -22,13 +22,32 @@ import { useState } from "react";
 import { PageShell } from "@/components/composed/page-shell";
 import { QrScannerSurface } from "@/components/composed/qr-scanner-surface";
 import { ScanResultPanel } from "@/components/composed/scan-result-panel";
+import { SprintGateBanner } from "@/components/composed/sprint-gate-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { isSprint5Enabled } from "@/lib/feature-flags";
 
 const MANUAL_INPUT_MAX_LEN = 256;
 
 export default function ScanPage() {
+  // Sprint-5 gate — Story 3.5 ships hidden until ~end of June 2026 so the
+  // Sprint-1 demo presents the agreed scope. Code below stays untouched.
+  // Wrapped in a separate component so hooks below are still called
+  // unconditionally when the flag is on (rules-of-hooks).
+  if (!isSprint5Enabled()) {
+    return (
+      <SprintGateBanner
+        sprint={5}
+        feature="QR-Code-Scanning für Geräte"
+        eta="Ende Juni 2026"
+      />
+    );
+  }
+  return <ScanPageInner />;
+}
+
+function ScanPageInner() {
   // Single source of truth — fed by either the camera surface OR the
   // manual-entry submit. The result panel gates rendering on truthiness.
   const [payload, setPayload] = useState<string | null>(null);

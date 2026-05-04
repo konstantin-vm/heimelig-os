@@ -19,6 +19,7 @@ import { Boxes, Plus, Printer } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { isSprint5Enabled } from "@/lib/feature-flags";
 import { useAppRole } from "@/lib/hooks/use-app-role";
 import { useArticleDevices } from "@/lib/queries/devices";
 
@@ -36,6 +37,10 @@ export function ArticleDevicesCard({ articleId }: ArticleDevicesCardProps) {
   const { data: role } = useAppRole();
   const canCreate =
     role === "admin" || role === "office" || role === "warehouse";
+  // "Etiketten drucken" + "Sammelregistrierung" target Sprint-5 surfaces
+  // (Stories 3.6 / 3.7) — hide the entry buttons while the flag is off so
+  // the article-detail card matches the demo nav.
+  const showSprint5Actions = isSprint5Enabled();
 
   // Card-level total (active devices for this article — independent of filters).
   // Mirrors the Story-3.1 separation between filtered list count and overall
@@ -74,25 +79,29 @@ export function ArticleDevicesCard({ articleId }: ArticleDevicesCardProps) {
         </div>
         {canCreate ? (
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setPrintOpen(true)}
-              aria-label="Etiketten für diesen Artikel drucken"
-            >
-              <Printer className="h-4 w-4" aria-hidden />
-              Etiketten drucken
-            </Button>
-            <Button asChild size="sm" variant="outline">
-              <Link
-                href={`/articles/batch?articleId=${articleId}`}
-                aria-label="Sammelregistrierung für diesen Artikel öffnen"
-              >
-                <Boxes className="h-4 w-4" aria-hidden />
-                Sammelregistrierung
-              </Link>
-            </Button>
+            {showSprint5Actions ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPrintOpen(true)}
+                  aria-label="Etiketten für diesen Artikel drucken"
+                >
+                  <Printer className="h-4 w-4" aria-hidden />
+                  Etiketten drucken
+                </Button>
+                <Button asChild size="sm" variant="outline">
+                  <Link
+                    href={`/articles/batch?articleId=${articleId}`}
+                    aria-label="Sammelregistrierung für diesen Artikel öffnen"
+                  >
+                    <Boxes className="h-4 w-4" aria-hidden />
+                    Sammelregistrierung
+                  </Link>
+                </Button>
+              </>
+            ) : null}
             <Button
               type="button"
               size="sm"

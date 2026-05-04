@@ -12,8 +12,21 @@ import { Suspense } from "react";
 
 import { ArticleLabelsHistoryTable } from "@/components/composed/article-labels-history-table";
 import { PageShell } from "@/components/composed/page-shell";
+import { SprintGateBanner } from "@/components/composed/sprint-gate-banner";
+import { isSprint5Enabled } from "@/lib/feature-flags";
 
 export default function ArticleLabelsPage() {
+  // Sprint-5 gate — Story 3.7 ships hidden until ~end of June 2026 so the
+  // Sprint-1 demo presents the agreed scope. Code below stays untouched.
+  if (!isSprint5Enabled()) {
+    return (
+      <SprintGateBanner
+        sprint={5}
+        feature="QR-Etiketten Generierung & Druck"
+        eta="Ende Juni 2026"
+      />
+    );
+  }
   return (
     <PageShell title="QR-Etiketten" backHref="/articles">
       <Suspense

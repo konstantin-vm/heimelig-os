@@ -11,6 +11,8 @@ import { notFound } from "next/navigation";
 
 import { BatchRegisterForm } from "@/components/composed/batch-register-form";
 import { PageShell } from "@/components/composed/page-shell";
+import { SprintGateBanner } from "@/components/composed/sprint-gate-banner";
+import { isSprint5Enabled } from "@/lib/feature-flags";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionRole } from "@/lib/supabase/session";
 import { uuidSchema } from "@/lib/validations/common";
@@ -24,6 +26,18 @@ export default async function BatchRegisterPage({
 }: {
   searchParams: Promise<{ articleId?: string | string[] }>;
 }) {
+  // Sprint-5 gate — Story 3.6 ships hidden until ~end of June 2026 so the
+  // Sprint-1 demo presents the agreed scope. Code below stays untouched.
+  if (!isSprint5Enabled()) {
+    return (
+      <SprintGateBanner
+        sprint={5}
+        feature="Batch-Registrierung von Geräten"
+        eta="Ende Juni 2026"
+      />
+    );
+  }
+
   const params = await searchParams;
   const rawArticleId = Array.isArray(params.articleId)
     ? params.articleId[0]

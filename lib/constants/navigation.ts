@@ -1,4 +1,17 @@
+import { isSprint5Enabled } from "@/lib/feature-flags";
 import { ROLE_ALLOWED_PATHS, type AppRole } from "@/lib/constants/roles";
+
+// Story 3.5/3.6/3.7 nav entries — gated behind
+// `NEXT_PUBLIC_SHOW_SPRINT5_FEATURES` until the official Sprint-5 demo. The
+// underlying routes still exist but render `<SprintGateBanner>` while the
+// flag is off; hiding the entry points here keeps the sidebar matching what
+// stakeholders see in Sprint-1 demos. Keep these `key`s in sync with
+// DESKTOP_NAV below.
+const SPRINT5_NAV_KEYS = new Set<string>([
+  "scan",
+  "articles.batch",
+  "articles.labels",
+]);
 
 export type NavShell = "desktop" | "mobile";
 
@@ -187,15 +200,19 @@ export const MOBILE_NAV: readonly NavItem[] = [
 const ALL_NAV: readonly NavItem[] = [...DESKTOP_NAV, ...MOBILE_NAV];
 
 export function navItemsFor(role: AppRole): NavItem[] {
+  const sprint5On = isSprint5Enabled();
   return ALL_NAV
     .filter((item) => item.roles.includes(role))
+    .filter((item) => sprint5On || !SPRINT5_NAV_KEYS.has(item.key))
     .map((item) =>
       item.children
         ? {
             ...item,
-            children: item.children.filter((child) =>
-              child.roles.includes(role),
-            ),
+            children: item.children
+              .filter((child) => child.roles.includes(role))
+              .filter(
+                (child) => sprint5On || !SPRINT5_NAV_KEYS.has(child.key),
+              ),
           }
         : item,
     );

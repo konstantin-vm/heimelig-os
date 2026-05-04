@@ -5,6 +5,7 @@ export type Json =
   | null
   | { [key: string]: Json | undefined }
   | Json[]
+
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
@@ -781,6 +782,7 @@ export type Database = {
           current_warehouse_id: string | null
           id: string
           inbound_date: string | null
+          is_new: boolean
           notes: string | null
           outbound_date: string | null
           qr_code: string | null
@@ -804,6 +806,7 @@ export type Database = {
           current_warehouse_id?: string | null
           id?: string
           inbound_date?: string | null
+          is_new?: boolean
           notes?: string | null
           outbound_date?: string | null
           qr_code?: string | null
@@ -827,6 +830,7 @@ export type Database = {
           current_warehouse_id?: string | null
           id?: string
           inbound_date?: string | null
+          is_new?: boolean
           notes?: string | null
           outbound_date?: string | null
           qr_code?: string | null
@@ -1665,6 +1669,96 @@ export type Database = {
           },
         ]
       }
+      technician_devices: {
+        Row: {
+          acquired_at: string | null
+          article_id: string | null
+          condition: string | null
+          created_at: string | null
+          created_by: string | null
+          current_contract_id: string | null
+          current_warehouse_id: string | null
+          id: string | null
+          inbound_date: string | null
+          is_new: boolean | null
+          notes: string | null
+          outbound_date: string | null
+          qr_code: string | null
+          reserved_at: string | null
+          reserved_for_customer_id: string | null
+          retired_at: string | null
+          serial_number: string | null
+          status: string | null
+          supplier_id: string | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "devices_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "technician_articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_current_warehouse_id_fkey"
+            columns: ["current_warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_reserved_for_customer_id_fkey"
+            columns: ["reserved_for_customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles_self"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_profiles_self: {
         Row: {
           color_hex: string | null
@@ -1869,8 +1963,11 @@ export type Database = {
     }
   }
 }
+
 type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
 type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
@@ -1899,6 +1996,7 @@ export type Tables<
       ? R
       : never
     : never
+
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
@@ -1923,6 +2021,7 @@ export type TablesInsert<
       ? I
       : never
     : never
+
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
@@ -1947,6 +2046,7 @@ export type TablesUpdate<
       ? U
       : never
     : never
+
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
@@ -1963,6 +2063,7 @@ export type Enums<
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
     ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
     : never
+
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
@@ -1979,6 +2080,7 @@ export type CompositeTypes<
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
     ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
+
 export const Constants = {
   public: {
     Enums: {},

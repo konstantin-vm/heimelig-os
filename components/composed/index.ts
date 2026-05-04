@@ -120,3 +120,34 @@ export {
   type ArticleEditFormMode,
   type ArticleEditFormProps,
 } from "./article-edit-form";
+
+// Story 3.2 — device domain.
+export {
+  ArticleDevicesCard,
+  type ArticleDevicesCardProps,
+} from "./article-devices-card";
+export {
+  ArticlePurchaseStockCard,
+  type ArticlePurchaseStockCardProps,
+} from "./article-purchase-stock-card";
+export {
+  DeviceListFilters,
+  type DeviceListFiltersProps,
+} from "./device-list-filters";
+export { DeviceTable, type DeviceTableProps } from "./device-table";
+export {
+  DeviceProfileHeader,
+  type DeviceProfileHeaderProps,
+} from "./device-profile-header";
+export {
+  DeviceInfoCard,
+  type DeviceInfoCardProps,
+} from "./device-info-card";
+export {
+  DeviceAuditTrailCard,
+  type DeviceAuditTrailCardProps,
+} from "./device-audit-trail-card";
+export {
+  DeviceEditForm,
+  type DeviceEditFormProps,
+} from "./device-edit-form";

@@ -33,7 +33,7 @@ async function ArticleProfileBody({ params }: { params: RouteParams }) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("articles")
-    .select("id, article_number, name, variant_label, is_rentable")
+    .select("id, article_number, name, variant_label, is_rentable, is_sellable")
     .eq("id", id)
     .maybeSingle();
 
@@ -73,6 +73,7 @@ async function ArticleProfileBody({ params }: { params: RouteParams }) {
         articleId={data.id}
         label={label}
         isRentable={data.is_rentable}
+        isSellable={data.is_sellable}
       />
     </PageShell>
   );

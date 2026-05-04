@@ -35,6 +35,10 @@ export const deviceSchema = z.object({
   qr_code: z.string().nullable(),
   status: deviceStatusSchema,
   condition: deviceConditionSchema,
+  // is_new: data-model-spec §5.4.1 line 571 + MTG-009 (2026-04-28). True until
+  // first rental/sale completion in Epic 5 / Story 4.x flips it to false;
+  // Story 3.2 only reads + offers a manual admin override.
+  is_new: z.boolean(),
   current_warehouse_id: uuidSchema.nullable(),
   current_contract_id: uuidSchema.nullable(),
   supplier_id: uuidSchema.nullable(),
@@ -59,17 +63,85 @@ export const deviceCreateSchema = deviceSchema
     updated_at: true,
     created_by: true,
     updated_by: true,
-    // Status transitions go through `transition_device_status` (Story 3.3);
-    // until then admins may seed the starting status directly.
   })
   .extend({
+    // Status defaults server-side to 'available' (00008 column default).
+    // After Story 3.3 ships `transition_device_status`, status is read-only
+    // in the form and the create path strips it before insert.
     status: deviceStatusSchema.default("available"),
     condition: deviceConditionSchema.default("gut"),
+    is_new: z.boolean().default(true),
   });
 
-// Direct status updates are not permitted after Story 3.3 — use the
-// transition function. We keep the field in the schema for seed/import flows.
-export const deviceUpdateSchema = deviceCreateSchema.partial();
+// Direct status updates are forbidden by convention (CLAUDE.md anti-pattern
+// "Direct UPDATE on status columns"). Story 3.3 ships `transition_device_status`
+// as the SECURITY DEFINER RPC. Until then, `useDeviceUpdate` strips `status`
+// from the patch and throws if a caller passes one; the `.superRefine` below
+// is the defense-in-depth tripwire at the validation layer.
+//
+// IMPORTANT — built from `deviceSchema.partial()`, NOT `deviceCreateSchema.partial()`.
+// `deviceCreateSchema` extends with `.default(...)` for status / condition / is_new;
+// `.partial()` of that schema injects those defaults into every parsed payload,
+// which would silently flip `is_new` back to `true` on every edit and re-introduce
+// `status='available'` into update patches. Going through `deviceSchema` keeps
+// every field optional without injecting defaults.
+export const deviceUpdateSchema = deviceSchema
+  .omit({
+    id: true,
+    created_at: true,
+    updated_at: true,
+    created_by: true,
+    updated_by: true,
+  })
+  .partial()
+  .superRefine((value, ctx) => {
+    if ("status" in value) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["status"],
+        message:
+          "Status-Änderungen erfolgen über die Transition-Funktion (Story 3.3)",
+      });
+    }
+    // Date invariants. retire-relation handled by the .refine below.
+    if (value.inbound_date && value.outbound_date) {
+      if (value.outbound_date < value.inbound_date) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["outbound_date"],
+          message: "Ausgang darf nicht vor Eingang liegen",
+        });
+      }
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (value.acquired_at && value.acquired_at > today) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["acquired_at"],
+        message: "Anschaffungsdatum darf nicht in der Zukunft liegen",
+      });
+    }
+    if (value.retired_at && value.retired_at > today) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["retired_at"],
+        message: "Ausmusterungsdatum darf nicht in der Zukunft liegen",
+      });
+    }
+  })
+  .refine(
+    (value) =>
+      value.retired_at == null ||
+      value.status == null ||
+      value.status === "sold",
+    {
+      // Soft semantic gate documenting spec intent. Note: `useDeviceUpdate`
+      // strips `status` from patches, so this refine is a tripwire for
+      // direct schema callers (tests, scripts) rather than the form path.
+      path: ["retired_at"],
+      message: "Außer Betrieb gesetzte Geräte sollten den Status 'Verkauft' tragen",
+    },
+  );
 
 export type Device = z.infer<typeof deviceSchema>;
 export type DeviceCreate = z.infer<typeof deviceCreateSchema>;

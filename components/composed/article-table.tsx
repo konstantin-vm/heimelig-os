@@ -491,7 +491,7 @@ function UsageChips({ isRentable, isSellable, type }: UsageChipsProps) {
         </span>
       ) : null}
       {isSellable ? (
-        <span className="inline-flex items-center rounded-md bg-success-soft px-2 py-0.5 text-xs font-medium text-success">
+        <span className="inline-flex items-center rounded-md bg-success-soft px-2 py-0.5 text-xs font-medium text-success-foreground">
           Verkauf
         </span>
       ) : null}

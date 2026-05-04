@@ -452,7 +452,7 @@ export function AddressFormFields({
         </div>
 
         {geoState.kind === "success" ? (
-          <div className="flex items-start gap-2 text-sm text-success">
+          <div className="flex items-start gap-2 text-sm text-success-foreground">
             <CheckCircle2 className="mt-0.5 h-4 w-4" aria-hidden />
             <div className="flex flex-col">
               <span className="font-medium text-foreground">

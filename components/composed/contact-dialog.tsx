@@ -370,7 +370,7 @@ export function ContactDialog({
                 {replaceWarning && existingPrimary ? (
                   <p
                     role="status"
-                    className="mt-1 text-xs font-medium text-amber-700"
+                    className="mt-1 text-xs font-medium text-warning-foreground"
                   >
                     {`${[existingPrimary.first_name, existingPrimary.last_name]
                       .filter((s) => s)

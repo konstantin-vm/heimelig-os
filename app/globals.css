@@ -45,6 +45,11 @@
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
   --color-info-soft: var(--info-soft);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-success-strong: var(--success-strong);
 
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
@@ -117,15 +122,25 @@
     --highlight-foreground:   oklch(100%   0       0);
     --highlight-soft:         oklch(96.0%  0.03    43.5);    /* Pale coral — badge bg */
 
-    --success:                oklch(81.7%  0.2082  153.2);   /* Frühlingsgrün */
-    --success-foreground:     oklch(20%    0.06    153.2);
-    --success-soft:           oklch(96.5%  0.05    153.2);   /* Pale green — badge bg */
+    --success:                oklch(81.7%  0.2082  153.2);   /* Frühlingsgrün — brand accent: icons against dark indigo, chart highlight */
+    --success-strong:         oklch(65%    0.16    153.2);   /* Tuned-down green — fill surfaces (progress bars) where brand neon overpowers neighbouring info/destructive segments */
+    --success-foreground:     oklch(20%    0.06    153.2);   /* Deep green — text on success-soft (4.5:1+ contrast) */
+    --success-soft:           oklch(96.5%  0.03    153.2);   /* Pale green — chroma matched to info/highlight/primary-soft to avoid neon undertone */
 
     --primary-soft:           oklch(95.5%  0.02    279.7);   /* Pale indigo — Sanitas badge bg */
 
     --info:                   oklch(56%    0.14    240);     /* Sky blue — Helsana brand tint */
     --info-foreground:        oklch(28%    0.10    240);     /* Deep blue text on info-soft */
     --info-soft:              oklch(95.0%  0.03    240);     /* Pale sky — Helsana badge bg */
+
+    /* Warning — pending/draft, cleaning, low-stock. Hue 80 (golden amber) */
+    /* sits between coral (43.5°) and yellow-green (~110°) so it never */
+    /* visually collides with --highlight (Korallen-Orange CTA). */
+    /* Provisional values — UX-alignment-pass with Lilian to confirm. */
+    --warning:                oklch(76%    0.15    80);
+    --warning-foreground:     oklch(28%    0.06    80);
+    --warning-soft:           oklch(96.5%  0.035   80);
+    --destructive-soft:       oklch(95%    0.03    27.9);    /* Pale red — error badge bg */
 
     --chart-1:                oklch(71.5%  0.1663  43.5);    /* Korallen-Orange */
     --chart-2:                oklch(81.7%  0.2082  153.2);   /* Frühlingsgrün */
@@ -191,6 +206,12 @@
     --info:                   oklch(72%    0.13    240);
     --info-foreground:        oklch(95%    0.02    240);
     --info-soft:              oklch(30%    0.08    240);
+
+    --warning:                oklch(76%    0.15    80);
+    --warning-foreground:     oklch(95%    0.025   80);
+    --warning-soft:           oklch(30%    0.08    80);
+    --destructive-soft:       oklch(30%    0.08    27.9);
+    --success-strong:         oklch(65%    0.16    153.2);
 
     --chart-1:                oklch(71.5%  0.1663  43.5);
     --chart-2:                oklch(81.7%  0.2082  153.2);

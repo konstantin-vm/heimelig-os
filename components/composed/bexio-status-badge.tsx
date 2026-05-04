@@ -16,12 +16,12 @@ const CONFIG: Record<
   valid: {
     label: "Verbunden",
     variant: "secondary",
-    tone: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    tone: "border-success/30 bg-success-soft text-success-foreground",
   },
   expiring_soon: {
     label: "Läuft bald ab",
     variant: "secondary",
-    tone: "border-amber-200 bg-amber-50 text-amber-900",
+    tone: "border-warning/30 bg-warning-soft text-warning-foreground",
   },
   expired: {
     label: "Abgelaufen",

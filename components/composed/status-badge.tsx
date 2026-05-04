@@ -84,28 +84,27 @@ const ARTICLE_LABELS: Record<ArticleStatus, string> = {
 };
 
 const ARTICLE_CLASSES: Record<ArticleStatus, string> = {
-  active: "bg-success-soft text-success",
+  active: "bg-success-soft text-success-foreground",
   inactive: "bg-muted text-muted-foreground",
 };
 
-// Token mapping: project ships `success-soft`/`info-soft` semantic tokens
-// (globals.css) for the on-brand greens + Helsana-tint blue; warning + a
-// repair-red use Tailwind's amber/red soft scale (mirrors the pattern from
-// `<BexioStatusBadge>`) since the design tokens don't ship `warning-soft`
-// / `destructive-soft` yet. UX-alignment-pass story can swap in dedicated
-// tokens once Lilian's frames land.
+// Token mapping: full semantic-token coverage as of v1.3 of the design
+// system — `success-soft`/`info-soft` for on-brand greens + Helsana blue,
+// `warning-soft` for cleaning/maintenance amber, `destructive-soft` for
+// repair/failure red. Provisional warning hue (golden amber 80°) pending
+// Lilian sign-off in the next UX-alignment-pass.
 const DEVICE_CLASSES: Record<DeviceStatus, string> = {
   available: "bg-success-soft text-success-foreground",
   rented: "bg-info-soft text-info-foreground",
-  cleaning: "bg-amber-50 text-amber-900",
-  repair: "bg-red-50 text-red-900",
+  cleaning: "bg-warning-soft text-warning-foreground",
+  repair: "bg-destructive-soft text-destructive",
   sold: "bg-muted text-muted-foreground",
 };
 
 const DEVICE_CONDITION_CLASSES: Record<DeviceCondition, string> = {
   gut: "bg-success-soft text-success-foreground",
-  gebrauchsspuren: "bg-amber-50 text-amber-900",
-  reparaturbeduerftig: "bg-red-50 text-red-900",
+  gebrauchsspuren: "bg-warning-soft text-warning-foreground",
+  reparaturbeduerftig: "bg-destructive-soft text-destructive",
 };
 
 const QR_LABEL_RUN_LABELS: Record<QrLabelRunStatus, string> = {
@@ -115,15 +114,15 @@ const QR_LABEL_RUN_LABELS: Record<QrLabelRunStatus, string> = {
 
 const QR_LABEL_RUN_CLASSES: Record<QrLabelRunStatus, string> = {
   completed: "bg-success-soft text-success-foreground",
-  failed: "bg-red-50 text-red-900",
+  failed: "bg-destructive-soft text-destructive",
 };
 
 // Story 3.4 — availability bucket (derived view column). Boundaries fixed
 // by SQL `case` in migration 00053: red=0, yellow=1..5, green>5.
 const AVAILABILITY_CLASSES: Record<AvailabilityStatus, string> = {
   green: "bg-success-soft text-success-foreground",
-  yellow: "bg-amber-50 text-amber-900",
-  red: "bg-red-50 text-red-900",
+  yellow: "bg-warning-soft text-warning-foreground",
+  red: "bg-destructive-soft text-destructive",
 };
 
 // Story 3.4 — stock warning (derived view column). Critical wins over low
@@ -133,8 +132,8 @@ const STOCK_WARNING_CLASSES: Record<
   Exclude<StockWarningLevel, "none">,
   string
 > = {
-  low: "bg-amber-50 text-amber-900",
-  critical: "bg-red-50 text-red-900",
+  low: "bg-warning-soft text-warning-foreground",
+  critical: "bg-destructive-soft text-destructive",
 };
 
 // Runtime drift fallback — if the DB ever returns a status outside the Zod

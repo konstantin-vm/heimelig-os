@@ -41,11 +41,18 @@ const STATUS_ROW_ORDER = [
 // (status IN active set, retired excluded — same denominator the SQL
 // view uses), so segments + segmentTotal MUST track that population.
 // Retired devices are surfaced in the post-bar text only.
+// Bar fills use the strong/balanced variants of each semantic token —
+// brand `--success` (neon Frühlingsgrün, L=82 C=0.208) is tuned for icons
+// against the dark indigo sidebar, not as a fill on white where it
+// overpowers the muted info/destructive segments next to it. The
+// `--success-strong` token (L=65 C=0.16) sits at the same visual weight
+// as `--info` and `--destructive` so the stacked bar reads as one
+// composition rather than a single screaming green segment.
 const SEGMENT_BG: Record<string, string> = {
-  available: "bg-success",
+  available: "bg-success-strong",
   rented: "bg-info",
-  cleaning: "bg-amber-400",
-  repair: "bg-red-500",
+  cleaning: "bg-warning",
+  repair: "bg-destructive",
   sold: "bg-muted-foreground/40",
 };
 

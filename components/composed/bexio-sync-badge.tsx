@@ -56,7 +56,7 @@ const DISPLAY_BY_STATUS: Record<
   },
   synced: {
     label: "Synced",
-    classes: "bg-success-soft text-success",
+    classes: "bg-success-soft text-success-foreground",
     Icon: CheckIcon,
   },
   failed: {

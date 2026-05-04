@@ -149,7 +149,7 @@ export function PrintLabelsBatchDialog({
           {(devicesQuery.data?.total ?? 0) > allDevices.length ? (
             <p
               role="alert"
-              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+              className="rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning-foreground"
             >
               {`Nur die ersten ${allDevices.length} Geräte werden angezeigt (insgesamt ${devicesQuery.data?.total}). Bitte in mehreren Chargen drucken.`}
             </p>

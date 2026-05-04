@@ -51,7 +51,7 @@ const INSURER_CLASSES: Record<InsuranceBadgeInsurer, string> = {
   helsana: "bg-info-soft text-info-foreground",
   sanitas: "bg-primary-soft text-primary",
   kpt: "bg-highlight-soft text-highlight-foreground",
-  visana: "bg-success-soft text-success",
+  visana: "bg-success-soft text-success-foreground",
   other: "bg-muted text-muted-foreground",
   none: "bg-muted/60 text-muted-foreground",
 };

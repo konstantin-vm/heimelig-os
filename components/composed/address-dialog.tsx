@@ -636,7 +636,7 @@ export function AddressDialog({
                   <p
                     role="status"
                     aria-live="polite"
-                    className="mt-1 text-xs font-medium text-amber-700"
+                    className="mt-1 text-xs font-medium text-warning-foreground"
                   >
                     {(() => {
                       const recipient =

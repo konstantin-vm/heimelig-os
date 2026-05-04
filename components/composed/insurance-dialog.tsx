@@ -597,7 +597,7 @@ export function InsuranceDialog({
                 {replaceWarning && existingPrimary ? (
                   <p
                     role="status"
-                    className="mt-1 text-xs font-medium text-amber-700"
+                    className="mt-1 text-xs font-medium text-warning-foreground"
                   >
                     {`${
                       existingPrimary.partner_insurers?.name ??

@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { priceListNameLabels } from "@/lib/constants/article";
+import { useActivePriceListDefinitions } from "@/lib/queries/price-list-definitions";
 import { useReplacePriceListEntry } from "@/lib/queries/price-lists";
 import type { PriceListNameValue } from "@/lib/validations/price-list";
 
@@ -56,9 +57,18 @@ export function PriceListEditDialog({
   const [notes, setNotes] = useState<string>(currentNotes ?? "");
   const [error, setError] = useState<string | null>(null);
 
+  // Story 3.1.1 — resolve the human-readable label dynamically. Falls back
+  // to the legacy hard-coded map for system slugs while definitions load.
+  const { data: definitions } = useActivePriceListDefinitions();
+  const definitionLabel =
+    definitions?.find((d) => d.slug === listName)?.name
+    ?? (listName in priceListNameLabels
+      ? priceListNameLabels[listName as keyof typeof priceListNameLabels]
+      : listName);
+
   const replace = useReplacePriceListEntry({
     onSuccess: () => {
-      toast.success(`${priceListNameLabels[listName]}-Preis aktualisiert.`);
+      toast.success(`${definitionLabel}-Preis aktualisiert.`);
       onOpenChange(false);
     },
     onError: (err) => {
@@ -132,7 +142,7 @@ export function PriceListEditDialog({
         <form onSubmit={onSubmit}>
           <DialogHeader>
             <DialogTitle>
-              {priceListNameLabels[listName]}-Preis aktualisieren
+              {definitionLabel}-Preis aktualisieren
             </DialogTitle>
             <DialogDescription>
               Der bisherige Preis bleibt für bestehende Verträge erhalten

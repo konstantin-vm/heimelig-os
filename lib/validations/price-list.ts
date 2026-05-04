@@ -7,6 +7,18 @@ import {
 } from "./common";
 
 // Mirrors `price_lists` (data-model-spec §5.3.2).
+//
+// Story 3.1.1 (migration 00056): the legacy CHECK enum on
+// `price_lists.list_name` has been relaxed and validation now happens against
+// the `price_list_definitions` table at the DB layer (RPCs validate the slug
+// is active). The Zod schema mirrors the slug grammar from
+// `price_list_definitions.slug` (`^[a-z0-9][a-z0-9_-]{0,63}$`).
+//
+// `priceListNameValues` is retained so the existing components and tests
+// that hard-code the 5 system slugs (e.g. `<PriceListCard>` fallback ordering,
+// `<ArticleEditForm>` create-mode price field labels) keep compiling without
+// a sweeping refactor; the UI layer dynamically reads
+// `price_list_definitions` at runtime via `useActivePriceListDefinitions()`.
 
 export const priceListNameValues = [
   "helsana",
@@ -15,7 +27,15 @@ export const priceListNameValues = [
   "kpt",
   "private",
 ] as const;
-export const priceListNameSchema = z.enum(priceListNameValues);
+
+export const priceListNameSchema = z
+  .string()
+  .min(1, "list_name darf nicht leer sein")
+  .max(64, "list_name darf höchstens 64 Zeichen lang sein")
+  .regex(
+    /^[a-z0-9][a-z0-9_-]{0,63}$/,
+    "list_name nur Kleinbuchstaben, Ziffern, '-' und '_' (Start mit Buchstabe oder Ziffer)",
+  );
 
 export const priceListCurrencySchema = z.literal("CHF");
 
@@ -70,7 +90,14 @@ export const priceListUpdateSchema = z
   })
   .partial();
 
-export type PriceListNameValue = (typeof priceListNameValues)[number];
+/**
+ * Story 3.1.1 — `PriceListNameValue` was historically the union of the 5
+ * system slugs. With the dynamic catalogue it widens to `string`, but the
+ * canonical 5-slug constants are still exposed via `priceListNameValues` so
+ * existing call-sites can keep using the literal (TypeScript narrows the
+ * literal types correctly as `"private" | "helsana" | ...`).
+ */
+export type PriceListNameValue = string;
 
 export type PriceList = z.infer<typeof priceListSchema>;
 export type PriceListCreate = z.infer<typeof priceListCreateSchema>;

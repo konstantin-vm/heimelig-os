@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm, type SubmitHandler } from "react-hook-form";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -30,8 +30,6 @@ import {
   articleTypeLabels,
   articleUnitLabels,
   articleVatRateLabels,
-  priceListNameLabels,
-  PRICE_LIST_DISPLAY_ORDER,
 } from "@/lib/constants/article";
 import { useAppRole } from "@/lib/hooks/use-app-role";
 import {
@@ -39,6 +37,7 @@ import {
   useCreateArticle,
   useUpdateArticle,
 } from "@/lib/queries/articles";
+import { useActivePriceListDefinitions } from "@/lib/queries/price-list-definitions";
 import {
   articleCategoryValues,
   articleCreateSchema,
@@ -85,13 +84,6 @@ type ArticleFormValues = {
   bexio_article_id: string;
   notes: string;
   is_active: boolean;
-  // Price-list inputs (create mode only). Strings for raw input; empty-string
-  // entries are silently skipped in the create RPC payload.
-  price_private: string;
-  price_helsana: string;
-  price_sanitas: string;
-  price_visana: string;
-  price_kpt: string;
 };
 
 const EMPTY_DEFAULTS: ArticleFormValues = {
@@ -117,11 +109,6 @@ const EMPTY_DEFAULTS: ArticleFormValues = {
   bexio_article_id: "",
   notes: "",
   is_active: true,
-  price_private: "",
-  price_helsana: "",
-  price_sanitas: "",
-  price_visana: "",
-  price_kpt: "",
 };
 
 function nullIfEmpty(s: string): string | null {
@@ -162,6 +149,13 @@ export function ArticleEditForm({
   const { data: role } = useAppRole();
   const isAdmin = role === "admin";
 
+  // Story 3.1.1 — dynamic price-list inputs in create mode. Keyed by slug;
+  // strings for raw input; empty-string entries are silently skipped in the
+  // create RPC payload.
+  const { data: priceListDefinitions } = useActivePriceListDefinitions();
+  const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
+  const [priceInputsError, setPriceInputsError] = useState<string | null>(null);
+
   const {
     control,
     handleSubmit,
@@ -185,11 +179,13 @@ export function ArticleEditForm({
   useEffect(() => {
     if (!open) {
       hydratedFor.current = null;
+      setPriceInputs({});
       return;
     }
     if (mode === "create") {
       if (hydratedFor.current !== "__create__") {
         reset(EMPTY_DEFAULTS);
+        setPriceInputs({});
         hydratedFor.current = "__create__";
       }
       return;
@@ -227,13 +223,6 @@ export function ArticleEditForm({
           article.bexio_article_id !== null ? String(article.bexio_article_id) : "",
         notes: article.notes ?? "",
         is_active: article.is_active,
-        // Edit mode never exposes price inputs in the form (managed via
-        // <PriceListCard> + <PriceListEditDialog> to avoid GIST races).
-        price_private: "",
-        price_helsana: "",
-        price_sanitas: "",
-        price_visana: "",
-        price_kpt: "",
       });
       hydratedFor.current = article.id;
     }
@@ -349,18 +338,32 @@ export function ArticleEditForm({
       "bexio_article_id",
       parseInteger,
     );
-    const pricePrivate = coerceOrError(values.price_private, "price_private", parseNumber);
-    const priceHelsana = coerceOrError(values.price_helsana, "price_helsana", parseNumber);
-    const priceSanitas = coerceOrError(values.price_sanitas, "price_sanitas", parseNumber);
-    const priceVisana = coerceOrError(values.price_visana, "price_visana", parseNumber);
-    const priceKpt = coerceOrError(values.price_kpt, "price_kpt", parseNumber);
+    // Story 3.1.1 — dynamic price-list inputs. Parse each non-empty entry;
+    // empty inputs are silently skipped.
+    const parsedPrices: Array<{ list_name: string; amount: number }> = [];
+    let pricesHaveError = false;
+    for (const [slug, raw] of Object.entries(priceInputs)) {
+      const t = raw.trim();
+      if (t === "") continue;
+      const parsedAmount = parseNumber(t);
+      if (parsedAmount === undefined || parsedAmount === null) {
+        pricesHaveError = true;
+        continue;
+      }
+      parsedPrices.push({ list_name: slug, amount: parsedAmount });
+    }
+
+    if (pricesHaveError) {
+      setPriceInputsError("Ein oder mehrere Preise sind keine gültige Zahl.");
+    } else {
+      setPriceInputsError(null);
+    }
 
     if (
       !weightKg.ok || !lengthCm.ok || !widthCm.ok || !heightCm.ok
       || !purchasePrice.ok || !minStock.ok || !criticalStock.ok
       || !bexioArticleId.ok
-      || !pricePrivate.ok || !priceHelsana.ok || !priceSanitas.ok
-      || !priceVisana.ok || !priceKpt.ok
+      || pricesHaveError
     ) {
       return;
     }
@@ -415,14 +418,8 @@ export function ArticleEditForm({
         return;
       }
 
-      const prices = [
-        { list_name: "private" as const, amount: pricePrivate.value },
-        { list_name: "helsana" as const, amount: priceHelsana.value },
-        { list_name: "sanitas" as const, amount: priceSanitas.value },
-        { list_name: "visana" as const, amount: priceVisana.value },
-        { list_name: "kpt" as const, amount: priceKpt.value },
-      ];
-      createMutation.mutate({ article: parsed.data, prices });
+      // parsedPrices already filters empty/invalid; pass directly.
+      createMutation.mutate({ article: parsed.data, prices: parsedPrices });
       return;
     }
 
@@ -813,32 +810,45 @@ export function ArticleEditForm({
                 </div>
               </Section>
 
-              {/* Preislisten — create mode only */}
+              {/* Preislisten — create mode only (Story 3.1.1: dynamic). */}
               {mode === "create" ? (
                 <Section title="Preislisten (optional)">
                   <p className="text-xs text-muted-foreground">
                     Trage hier Startpreise ein. Leere Felder werden ignoriert.
+                    Weitere Preislisten lassen sich unter Einstellungen →
+                    Preislisten anlegen.
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {PRICE_LIST_DISPLAY_ORDER.map((listName) => {
-                      const fieldName = `price_${listName}` as const;
+                    {(priceListDefinitions ?? []).map((definition) => {
+                      const fieldId = `art-price-${definition.slug}`;
                       return (
                         <Field
-                          key={listName}
-                          label={`${priceListNameLabels[listName]} (CHF)`}
-                          htmlFor={`art-${fieldName}`}
+                          key={definition.id}
+                          label={`${definition.name} (CHF)`}
+                          htmlFor={fieldId}
                         >
                           <Input
-                            id={`art-${fieldName}`}
+                            id={fieldId}
                             type="text"
                             inputMode="decimal"
                             placeholder="0.00"
-                            {...register(fieldName)}
+                            value={priceInputs[definition.slug] ?? ""}
+                            onChange={(e) =>
+                              setPriceInputs((prev) => ({
+                                ...prev,
+                                [definition.slug]: e.target.value,
+                              }))
+                            }
                           />
                         </Field>
                       );
                     })}
                   </div>
+                  {priceInputsError ? (
+                    <p className="text-xs text-destructive" role="alert">
+                      {priceInputsError}
+                    </p>
+                  ) : null}
                 </Section>
               ) : null}
 

@@ -11,11 +11,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  PRICE_LIST_DISPLAY_ORDER,
-  priceListNameLabels,
-} from "@/lib/constants/article";
+import { priceListNameLabels } from "@/lib/constants/article";
 import { useAppRole } from "@/lib/hooks/use-app-role";
+import { useActivePriceListDefinitions } from "@/lib/queries/price-list-definitions";
 import {
   priceListKeys,
   usePriceListForArticle,
@@ -32,6 +30,7 @@ export type PriceListCardProps = {
 
 export function PriceListCard({ articleId }: PriceListCardProps) {
   const { data: rows, isLoading, isError } = usePriceListForArticle(articleId);
+  const { data: definitions } = useActivePriceListDefinitions();
   const { data: role } = useAppRole();
   const queryClient = useQueryClient();
   const channelSuffix = useId();
@@ -74,6 +73,23 @@ export function PriceListCard({ articleId }: PriceListCardProps) {
 
   const byName = new Map((rows ?? []).map((r) => [r.list_name, r]));
 
+  // Iterate dynamically over active price-list definitions (Story 3.1.1).
+  // Fall back to the historical 5-slug ordering while definitions are still
+  // loading so the card never renders empty.
+  const slots: ReadonlyArray<{ slug: string; label: string }> = (() => {
+    if (definitions && definitions.length > 0) {
+      return definitions.map((d) => ({ slug: d.slug, label: d.name }));
+    }
+    const FALLBACK: ReadonlyArray<{ slug: string; label: string }> = [
+      { slug: "private", label: priceListNameLabels.private },
+      { slug: "helsana", label: priceListNameLabels.helsana },
+      { slug: "sanitas", label: priceListNameLabels.sanitas },
+      { slug: "visana", label: priceListNameLabels.visana },
+      { slug: "kpt", label: priceListNameLabels.kpt },
+    ];
+    return FALLBACK;
+  })();
+
   return (
     <Card>
       <CardHeader className="space-y-0 pb-2">
@@ -90,15 +106,15 @@ export function PriceListCard({ articleId }: PriceListCardProps) {
           </p>
         ) : (
           <dl className="flex flex-col gap-1">
-            {PRICE_LIST_DISPLAY_ORDER.map((listName) => {
-              const row = byName.get(listName);
+            {slots.map(({ slug, label }) => {
+              const row = byName.get(slug);
               return (
                 <div
-                  key={listName}
+                  key={slug}
                   className="flex items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1.5 hover:border-border hover:bg-muted/30"
                 >
                   <dt className="text-sm font-medium text-foreground">
-                    {priceListNameLabels[listName]}
+                    {label}
                   </dt>
                   <dd className="flex items-center gap-2 text-sm">
                     {row && row.amount !== null ? (
@@ -112,9 +128,9 @@ export function PriceListCard({ articleId }: PriceListCardProps) {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      aria-label={`${priceListNameLabels[listName]}-Preis bearbeiten`}
-                      title={`${priceListNameLabels[listName]}-Preis bearbeiten`}
-                      onClick={() => setEditingList(listName)}
+                      aria-label={`${label}-Preis bearbeiten`}
+                      title={`${label}-Preis bearbeiten`}
+                      onClick={() => setEditingList(slug)}
                       className="h-7 w-7"
                     >
                       <Pencil className="h-3.5 w-3.5" aria-hidden />

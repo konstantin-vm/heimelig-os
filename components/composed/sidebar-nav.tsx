@@ -53,7 +53,11 @@ const COUNTER_VARIANT: Record<
   invoices: "destructive",
 };
 
-const ARTIKEL_STORAGE_KEY = "sidebar.artikel.expanded";
+// Story 3.1.1 — keyed per parent to support multiple expandable groups
+// (Artikel + Einstellungen). Old keys auto-migrate the first time the
+// expandable mounts (the previous "sidebar.artikel.expanded" value still
+// resolves correctly because the key suffix matches `item.key`).
+const STORAGE_KEY_PREFIX = "sidebar.expanded.";
 
 function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -144,12 +148,14 @@ function SidebarExpandable({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(ARTIKEL_STORAGE_KEY);
+    const stored = window.localStorage.getItem(
+      `${STORAGE_KEY_PREFIX}${item.key}`,
+    );
     // TODO(Lilian, Story 1.4 polish): React 19 lint flags setState-in-effect.
     // Consider deriving expanded state from props/localStorage at render time.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (stored !== null) setExpanded(stored === "true");
-  }, []);
+  }, [item.key]);
 
   useEffect(() => {
     // TODO(Lilian, Story 1.4 polish): mirror-prop-into-state antipattern.
@@ -162,7 +168,10 @@ function SidebarExpandable({
     setExpanded((prev) => {
       const next = !prev;
       if (typeof window !== "undefined") {
-        window.localStorage.setItem(ARTIKEL_STORAGE_KEY, String(next));
+        window.localStorage.setItem(
+          `${STORAGE_KEY_PREFIX}${item.key}`,
+          String(next),
+        );
       }
       return next;
     });

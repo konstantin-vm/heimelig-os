@@ -183,6 +183,21 @@ export const DESKTOP_NAV: readonly NavItem[] = [
     roles: ["admin"],
     shell: "desktop",
     adminSection: true,
+    children: [
+      {
+        // Story 3.1.1 — admin-only price-list catalogue.
+        key: "settings.price-lists",
+        labelDe: "Preislisten",
+        href: "/settings/price-lists",
+        roles: ["admin"],
+      },
+      {
+        key: "settings.bexio",
+        labelDe: "bexio-Verbindung",
+        href: "/settings/bexio",
+        roles: ["admin"],
+      },
+    ],
   },
 ] as const;
 

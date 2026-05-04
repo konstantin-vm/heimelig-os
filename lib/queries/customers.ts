@@ -88,6 +88,16 @@ export const customerKeys = {
     [...customerKeys.all, "detail", id, "recent-orders"] as const,
   activeDevices: (id: string) =>
     [...customerKeys.all, "detail", id, "active-devices"] as const,
+  // Story 2.5.1 — MTG-008 add-ons. Keys for the four new profile cards;
+  // each backing hook is a stub that returns the empty shape so the cards
+  // exercise their "Verfügbar mit Epic X" copy. Epic 5 / Epic 6 swap the
+  // queryFn bodies without touching the key shape.
+  invoices: (id: string) =>
+    [...customerKeys.all, "detail", id, "invoices"] as const,
+  revenue: (id: string) =>
+    [...customerKeys.all, "detail", id, "revenue"] as const,
+  documents: (id: string) =>
+    [...customerKeys.all, "detail", id, "documents"] as const,
 };
 
 export const partnerInsurerKeys = {
@@ -555,6 +565,53 @@ export function useActiveDevices(customerId: string | null) {
   const enabled = customerId !== null && customerId.length > 0;
   return useQuery({
     queryKey: customerKeys.activeDevices(customerId ?? "__none__"),
+    queryFn: enabled
+      ? async (): Promise<unknown[]> => Promise.resolve([])
+      : skipToken,
+  });
+}
+
+/**
+ * Story 2.5.1 — Epic-6 stub. Returns an empty list so the
+ * `<CustomerInvoicesCard>` exercises its empty state. Epic 6 Story 6.2 swaps
+ * the body to actually query `invoices` filtered by `customer_id` (joined
+ * with bexio invoice metadata).
+ */
+export function useCustomerInvoices(customerId: string | null) {
+  const enabled = customerId !== null && customerId.length > 0;
+  return useQuery({
+    queryKey: customerKeys.invoices(customerId ?? "__none__"),
+    queryFn: enabled
+      ? async (): Promise<unknown[]> => Promise.resolve([])
+      : skipToken,
+  });
+}
+
+/**
+ * Story 2.5.1 — Epic-6 stub. Returns `null` so the `<CustomerRevenueCard>`
+ * always renders the em-dash placeholder for the lifetime revenue figure.
+ * Epic 6 Story 6.4 swaps the body to aggregate paid invoices.
+ */
+export function useCustomerRevenue(customerId: string | null) {
+  const enabled = customerId !== null && customerId.length > 0;
+  return useQuery({
+    queryKey: customerKeys.revenue(customerId ?? "__none__"),
+    queryFn: enabled
+      ? async (): Promise<number | null> => Promise.resolve(null)
+      : skipToken,
+  });
+}
+
+/**
+ * Story 2.5.1 — Epic-5 stub. Returns an empty list so the
+ * `<CustomerDocumentsCard>` exercises its empty state. Epic 5 Story 5.4 swaps
+ * the body to actually query `customer_documents` (Arztzeugnisse +
+ * Lieferscheine) filtered by `customer_id`.
+ */
+export function useCustomerDocuments(customerId: string | null) {
+  const enabled = customerId !== null && customerId.length > 0;
+  return useQuery({
+    queryKey: customerKeys.documents(customerId ?? "__none__"),
     queryFn: enabled
       ? async (): Promise<unknown[]> => Promise.resolve([])
       : skipToken,

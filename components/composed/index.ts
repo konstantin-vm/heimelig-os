@@ -89,6 +89,25 @@ export {
   CustomerOrdersCard,
   type CustomerOrdersCardProps,
 } from "./customer-orders-card";
+// Story 2.5.1 — MTG-008 add-ons (invoices table, revenue KPI, dual notes,
+// documents stub). Each card is a layout-first stub except <CustomerNotesCard>,
+// which wires the existing `customers.notes` column live.
+export {
+  CustomerInvoicesCard,
+  type CustomerInvoicesCardProps,
+} from "./customer-invoices-card";
+export {
+  CustomerRevenueCard,
+  type CustomerRevenueCardProps,
+} from "./customer-revenue-card";
+export {
+  CustomerNotesCard,
+  type CustomerNotesCardProps,
+} from "./customer-notes-card";
+export {
+  CustomerDocumentsCard,
+  type CustomerDocumentsCardProps,
+} from "./customer-documents-card";
 export {
   CustomerProfileHeader,
   type CustomerProfileHeaderProps,

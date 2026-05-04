@@ -119,11 +119,13 @@ export function CustomerInfoCard({ customerId, onEdit }: CustomerInfoCardProps) 
                   : "nicht erfasst"
               }
             />
-            <DefinitionRow
-              label="Notizen"
-              value={customer.notes}
-              preserveWhitespace
-            />
+            {/*
+              Story 2.5.1 — Notizen row moved into the dedicated
+              <CustomerNotesCard> (Backoffice section). Keeping a duplicate
+              here would let the two views drift; the notes-card hydrates
+              from the same `useCustomer` cache so realtime invalidations
+              propagate to both displays.
+            */}
           </>
         )}
       </CardContent>

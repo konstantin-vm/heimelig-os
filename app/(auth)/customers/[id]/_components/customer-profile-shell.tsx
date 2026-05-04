@@ -8,11 +8,15 @@ import {
   CustomerAddressesCard,
   CustomerContactsCard,
   CustomerDevicesCard,
+  CustomerDocumentsCard,
   CustomerEditForm,
   CustomerInfoCard,
   CustomerInsuranceCard,
+  CustomerInvoicesCard,
+  CustomerNotesCard,
   CustomerOrdersCard,
   CustomerProfileHeader,
+  CustomerRevenueCard,
 } from "@/components/composed";
 import {
   Breadcrumb,
@@ -65,6 +69,8 @@ export function CustomerProfileShell({
             customerId={customerId}
             customerLabel={fullName}
           />
+          {/* Story 2.5.1 — MTG-008 add-on, kept compact in the left column. */}
+          <CustomerRevenueCard customerId={customerId} />
           <BexioContactCard customerId={customerId} />
         </div>
         <div className="flex flex-col gap-6">
@@ -77,7 +83,12 @@ export function CustomerProfileShell({
             customerId={customerId}
             customerLabel={fullName}
           />
+          {/* Story 2.5.1 — Backoffice notes (live) + Monteur stub. */}
+          <CustomerNotesCard customerId={customerId} />
           <CustomerOrdersCard customerId={customerId} />
+          {/* Story 2.5.1 — Epic-6 invoices stub + Epic-5 documents stub. */}
+          <CustomerInvoicesCard customerId={customerId} />
+          <CustomerDocumentsCard customerId={customerId} />
         </div>
       </div>
 
